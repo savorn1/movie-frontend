@@ -1,0 +1,22 @@
+{
+  "name": "RuengFlix - រឿងភាគខ្មែរ",
+  "short_name": "RuengFlix",
+  "description": "ទស្សនារឿងភាគខ្លីជាភាសាខ្មែរ",
+  "lang": "km-KH",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "categories": ["entertainment"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "ខ្លីៗ", "url": "/shorts", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "ចំណាត់ថ្នាក់", "url": "/hot", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

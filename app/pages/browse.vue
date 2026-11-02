@@ -1,0 +1,215 @@
+<script setup lang="ts">
+import { browseMovies, categoryLabels, type AccessKey, type Movie, type SortKey } from '#shared/data/movies'
+
+useHead({ title: 'រុករករឿង - RuengFlix' })
+
+type CategoryKey = Movie['category'] | 'all'
+
+const categories: { key: CategoryKey; label: string }[] = [
+  { key: 'all', label: 'ទាំងអស់' },
+  ...(Object.entries(categoryLabels) as [Movie['category'], string][]).map(([key, label]) => ({ key, label }))
+]
+const accessOptions: { key: AccessKey; label: string }[] = [
+  { key: 'all', label: 'ទាំងអស់' },
+  { key: 'free', label: 'ឥតគិតថ្លៃ' },
+  { key: 'vip', label: 'VIP' }
+]
+const sortOptions: { key: SortKey; label: string }[] = [
+  { key: 'latest', label: 'ថ្មីបំផុត' },
+  { key: 'popular', label: 'ពេញនិយម' },
+  { key: 'episodes', label: 'វគ្គច្រើន' }
+]
+
+// Filters live in the URL so a filtered view can be shared or reloaded
+const route = useRoute()
+const router = useRouter()
+const pick = <T extends string>(v: unknown, allowed: { key: T }[], fallback: T) =>
+  allowed.some(o => o.key === v) ? (v as T) : fallback
+
+const category = computed(() => pick(route.query.category, categories, 'all'))
+const access = computed(() => pick(route.query.access, accessOptions, 'all'))
+const sort = computed(() => pick(route.query.sort, sortOptions, 'latest'))
+
+function set(key: 'category' | 'access' | 'sort', value: string) {
+  const defaults = { category: 'all', access: 'all', sort: 'latest' }
+  const query = { ...route.query, [key]: value === defaults[key] ? undefined : value }
+  router.replace({ query })
+}
+
+const results = computed(() => browseMovies({ category: category.value, access: access.value, sort: sort.value }))
+const filtered = computed(() => category.value !== 'all' || access.value !== 'all')
+const reset = () => router.replace({ query: {} })
+</script>
+
+<template>
+  <div class="page">
+    <h1 class="page-title display">រុករករឿង</h1>
+
+    <div class="filters">
+      <div class="chips" role="group" aria-label="ប្រភេទ">
+        <button
+          v-for="c in categories"
+          :key="c.key"
+          type="button"
+          :aria-pressed="category === c.key"
+          @click="set('category', c.key)"
+        >
+          {{ c.label }}
+        </button>
+      </div>
+
+      <div class="row">
+        <div class="chips small" role="group" aria-label="សិទ្ធិមើល">
+          <button
+            v-for="a in accessOptions"
+            :key="a.key"
+            type="button"
+            :aria-pressed="access === a.key"
+            @click="set('access', a.key)"
+          >
+            {{ a.label }}
+          </button>
+        </div>
+
+        <label class="sort">
+          <span>តម្រៀប</span>
+          <select :value="sort" @change="set('sort', ($event.target as HTMLSelectElement).value)">
+            <option v-for="o in sortOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <p class="count" aria-live="polite">
+      {{ kh(results.length) }} រឿង
+      <button v-if="filtered" type="button" class="link" @click="reset">សម្អាតតម្រង</button>
+    </p>
+
+    <div v-if="results.length" class="grid">
+      <PosterCard v-for="(m, i) in results" :key="m.id" :movie="m" :eager="i < 6" />
+    </div>
+    <EmptyState v-else icon="compass" message="មិនមានរឿងដែលត្រូវនឹងតម្រងទាំងនេះទេ។">
+      <button type="button" class="btn btn-outline" @click="reset">សម្អាតតម្រង</button>
+    </EmptyState>
+  </div>
+</template>
+
+<style scoped>
+
+.filters {
+  position: sticky;
+  top: 64px;
+  z-index: 20;
+  display: grid;
+  gap: 10px;
+  margin: 0 -32px 8px;
+  padding: 10px 32px;
+  background: var(--header-solid);
+  backdrop-filter: blur(16px);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .filters {
+    background: var(--bg);
+    backdrop-filter: none;
+  }
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chips button {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.chips button:hover {
+  background: var(--bg-hover);
+}
+
+.chips button[aria-pressed='true'] {
+  background: var(--text-strong);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.chips.small button {
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.sort select {
+  min-height: 36px;
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+}
+
+.count {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 16px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.link {
+  min-height: 36px;
+  color: var(--text-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 24px 16px;
+}
+
+@media (max-width: 768px) {
+  .filters {
+    top: 56px;
+    margin: 0 -16px 8px;
+    padding: 10px 16px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px 10px;
+  }
+}
+</style>

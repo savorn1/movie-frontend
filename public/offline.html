@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="km-KH">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000000">
+<title>គ្មានអ៊ីនធឺណិត - RuengFlix</title>
+<style>
+  :root { color-scheme: dark light; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; box-sizing: border-box;
+    background: #000; color: #e1e3e5; text-align: center;
+    font-family: 'Kantumruy Pro', 'Noto Sans Khmer', 'Khmer Sangam MN', 'Khmer UI', system-ui, sans-serif; line-height: 1.7;
+  }
+  @media (prefers-color-scheme: light) { body { background: #f5f6f8; color: #2a2c30; } }
+  .mark { width: 64px; height: 64px; margin: 0 auto 16px; border-radius: 16px; background: #ffd101; color: #1a1400;
+    display: grid; place-items: center; font: 900 38px/1 'Arial Black', Arial, sans-serif; }
+  h1 { margin: 0 0 6px; font-size: 22px; }
+  p { margin: 0 0 20px; opacity: .75; }
+  button { min-height: 44px; padding: 0 22px; border: 0; border-radius: 999px; background: #ffd101; color: #1a1400;
+    font: inherit; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+  <main>
+    <div class="mark" aria-hidden="true">R</div>
+    <h1>គ្មានអ៊ីនធឺណិត</h1>
+    <p>ពិនិត្យ Wi-Fi ឬទិន្នន័យទូរស័ព្ទ ហើយព្យាយាមម្តងទៀត។</p>
+    <button type="button" onclick="location.reload()">ព្យាយាមម្តងទៀត</button>
+  </main>
+  <script>window.addEventListener('online', function () { location.reload() })</script>
+</body>
+</html>

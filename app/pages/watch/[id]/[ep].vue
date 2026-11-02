@@ -1,0 +1,244 @@
+<script setup lang="ts">
+import { byCategory, movies } from '#shared/data/movies'
+
+const route = useRoute()
+const movie = computed(() => movies.find(m => m.id === Number(route.params.id)))
+const ep = computed(() => Number(route.params.ep))
+
+if (!movie.value || !Number.isInteger(ep.value) || ep.value < 1 || ep.value > movie.value.episodes) {
+  throw createError({ statusCode: 404, message: 'រកមិនឃើញវគ្គនេះទេ' })
+}
+
+const { canWatch } = useLibrary()
+const { share } = useShare()
+const ambient = useAmbientColor(() => movie.value?.poster)
+
+const similar = computed(() => byCategory(movie.value!.category).filter(m => m.id !== movie.value!.id))
+
+// Up next: the following episode, or a similar series once this one is finished
+const nextEp = computed(() => (ep.value < movie.value!.episodes ? ep.value + 1 : null))
+const nextLocked = computed(() => nextEp.value !== null && !canWatch(movie.value!, nextEp.value))
+const nextSeries = computed(() => similar.value[0])
+
+useHead({ title: () => `${movie.value?.title} វគ្គ ${kh(ep.value)} - RuengFlix` })
+</script>
+
+<template>
+  <div v-if="movie" class="page" :style="{ '--ambient': ambient }">
+    <div class="layout">
+      <div class="main-col">
+        <ClientOnly>
+          <BingePlayer :movie="movie" :ep="ep" />
+          <template #fallback>
+            <div class="player-skeleton" :style="{ backgroundImage: `url(${movie.banner})` }" />
+          </template>
+        </ClientOnly>
+
+        <div class="bar">
+          <div class="title-block">
+            <h1><NuxtLink :to="`/detail/${movie.id}`">{{ movie.title }}</NuxtLink></h1>
+            <p class="ep">វគ្គ {{ kh(ep) }} នៃ {{ kh(movie.episodes) }}</p>
+          </div>
+          <div class="tools">
+            <ClientOnly>
+              <FollowButton :movie="movie" />
+              <SaveButton :movie-id="movie.id" />
+            </ClientOnly>
+            <ActionButton icon="share" label="ចែករំលែក" @click="share(`${movie.title} វគ្គ ${kh(ep)}`, `/watch/${movie.id}/${ep}`)" />
+          </div>
+        </div>
+
+        <details class="shortcuts">
+          <summary>ផ្លូវកាត់ក្តារចុច</summary>
+          <dl>
+            <dt>Space / K</dt><dd>ចាក់ / ផ្អាក</dd>
+            <dt>← → / J L</dt><dd>ថយ / ទៅមុខ ១០ វិនាទី</dd>
+            <dt>N / P</dt><dd>វគ្គបន្ទាប់ / វគ្គមុន</dd>
+            <dt>&lt; &gt;</dt><dd>ល្បឿន</dd>
+            <dt>C</dt><dd>អក្សររត់</dd>
+            <dt>M</dt><dd>បិទ / បើកសំឡេង</dd>
+            <dt>F</dt><dd>ពេញអេក្រង់</dd>
+          </dl>
+        </details>
+      </div>
+
+      <aside class="side">
+        <ClientOnly>
+          <NuxtLink v-if="nextEp" :to="`/watch/${movie.id}/${nextEp}`" class="up-next">
+            <img :src="movie.poster" alt="">
+            <span class="un-text">
+              <small>{{ nextLocked ? 'វគ្គបន្ទាប់ · VIP' : 'វគ្គបន្ទាប់' }}</small>
+              <strong>វគ្គ {{ kh(nextEp) }}</strong>
+              <span>{{ movie.title }}</span>
+            </span>
+            <AppIcon :name="nextLocked ? 'lock' : 'play'" :size="18" class="un-icon" />
+          </NuxtLink>
+          <NuxtLink v-else-if="nextSeries" :to="`/detail/${nextSeries.id}`" class="up-next">
+            <img :src="nextSeries.poster" alt="">
+            <span class="un-text">
+              <small>ចប់រឿងហើយ · រឿងបន្ទាប់</small>
+              <strong>{{ nextSeries.title }}</strong>
+              <span>{{ kh(nextSeries.episodes) }} វគ្គ</span>
+            </span>
+            <AppIcon name="chevron-right" :size="18" class="un-icon" />
+          </NuxtLink>
+        </ClientOnly>
+
+        <h2>វគ្គទាំងអស់</h2>
+        <ClientOnly>
+          <EpisodeGrid :movie="movie" :current="ep" compact />
+        </ClientOnly>
+      </aside>
+    </div>
+
+    <MovieRow v-if="similar.length" title="រឿងស្រដៀងគ្នា" :items="similar" small />
+  </div>
+</template>
+
+<style scoped>
+.page {
+  background: radial-gradient(ellipse 60% 420px at 30% 0%, rgb(var(--ambient) / calc(var(--ambient-alpha) * 0.8)), transparent 70%);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 28px;
+  align-items: start;
+  margin-bottom: 32px;
+}
+
+.player-skeleton {
+  aspect-ratio: 16 / 9;
+  border-radius: 16px;
+  background: #111 center / cover no-repeat;
+  opacity: 0.6;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px 0 8px;
+}
+
+h1 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 22px;
+}
+
+h1 a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ep {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+}
+
+.tools {
+  display: flex;
+  gap: 4px;
+}
+
+.shortcuts {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.shortcuts summary {
+  min-height: 36px;
+  cursor: pointer;
+}
+
+.shortcuts dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+}
+
+.shortcuts dt {
+  color: var(--text-strong);
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+
+.shortcuts dd {
+  margin: 0;
+}
+
+.up-next {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+}
+
+.up-next:hover {
+  background: var(--bg-hover);
+}
+
+.up-next img {
+  width: 64px;
+  aspect-ratio: 5 / 7;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.un-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.un-text small {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.un-text strong {
+  color: var(--text-strong);
+}
+
+.un-text span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.un-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.side h2 {
+  margin: 0 0 12px;
+  color: var(--text-strong);
+  font-size: 18px;
+}
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (hover: none) {
+  .shortcuts {
+    display: none;
+  }
+}
+
+</style>

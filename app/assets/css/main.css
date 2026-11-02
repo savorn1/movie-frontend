@@ -1,0 +1,274 @@
+/*
+ * Appearance: "system" (default), "light" or "dark", chosen on the Me page or in the header.
+ * An inline script in <head> (see useTheme) resolves the choice before first paint and sets
+ * <html data-theme="light|dark">; every themed rule keys off that attribute.
+ */
+:root {
+  color-scheme: dark;
+  --bg: #000000;
+  --bg-elev: #16161a;
+  --bg-elev-2: #25252b;
+  --bg-hover: #2a2b32;
+  --border: #303139;
+  --text: #e1e3e5;
+  --text-strong: #ffffff;
+  --text-muted: #969aa3; /* 7.45:1 on --bg, 5.40:1 on --bg-elev-2 */
+  /* Yellow is reserved for Play, Pay and VIP status. Fill vs text are separate tokens. */
+  --accent: #ffd101;
+  --accent-text: #ffd101; /* 14.37:1 on --bg */
+  --accent-ink: #1a1400; /* 12.56:1 on --accent */
+  --signal: #d70015; /* white on it 5.38:1 */
+  --header-solid: rgba(0, 0, 0, 0.92);
+  --shade: linear-gradient(180deg, rgba(0, 0, 0, 0), #000 100%);
+  --search-bg: rgba(255, 255, 255, 0.11);
+  --shimmer: linear-gradient(90deg, #1c1c21 0%, #2a2b32 50%, #1c1c21 100%);
+  --focus: #ffffff;
+  /* Strength of the poster-colour glow behind hero, detail and watch pages */
+  --ambient-alpha: 0.45;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #eceef1;
+  --bg-hover: #e4e6ea;
+  --border: #d9dce1;
+  --text: #2a2c30;
+  --text-strong: #000000;
+  --text-muted: #5c6069; /* 5.42:1 on --bg-elev-2 */
+  --accent: #f2b600;
+  --accent-text: #8a6500; /* 5.33:1 on white; #f2b600 as text was 1.83:1 */
+  --header-solid: rgba(255, 255, 255, 0.94);
+  --shade: linear-gradient(180deg, rgba(245, 246, 248, 0), #f5f6f8 100%);
+  --search-bg: rgba(0, 0, 0, 0.06);
+  --shimmer: linear-gradient(90deg, #e6e8ec 0%, #f2f3f5 50%, #e6e8ec 100%);
+  --focus: #000000;
+  --ambient-alpha: 0.18;
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --text-muted: #c4c7cd;
+    --border: #5a5c66;
+  }
+
+  :root[data-theme='light'] {
+    --text-muted: #3d4047;
+    --border: #8a8e96;
+  }
+}
+
+/* Switching theme recolours everything at once instead of animating each element */
+:root.theme-switching *,
+:root.theme-switching *::before,
+:root.theme-switching *::after {
+  transition: none !important;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * Khmer type system
+ * - UI/reading: Kantumruy Pro (400–700), then each platform's native Khmer face
+ *   (Android: Noto Sans Khmer, Apple: Khmer Sangam MN, Windows: Khmer UI).
+ * - Display: Koulen, a single-weight poster face, used only via .display.
+ * - Khmer stacks consonants below the line (coeng) and vowels above it, so leading is
+ *   looser than for Latin: 1.7 for reading, 1.45 for headings.
+ * - Khmer has no spaces between words; never letter-space Khmer text.
+ */
+:root {
+  --font-ui: 'Kantumruy Pro', 'Noto Sans Khmer', 'Khmer Sangam MN', 'Khmer UI', system-ui, sans-serif;
+  --font-display: 'Koulen', 'Kantumruy Pro', 'Noto Sans Khmer', 'Khmer Sangam MN', 'Khmer UI', sans-serif;
+  --lh-body: 1.7;
+  --lh-heading: 1.45;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: var(--lh-body);
+  /* Don't fake bold/italic: Koulen has one weight and Khmer has no italic */
+  font-synthesis: none;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+  line-height: var(--lh-heading);
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* Poster-style display face; weight stays 400 because Koulen has no bold */
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Standard page gutter; pages with a different layout (Home, Detail, VIP) set their own */
+.page {
+  padding: 24px 32px 0;
+}
+
+.page-title {
+  margin: 0 0 16px;
+  color: var(--text-strong);
+  font-size: 34px;
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 16px 16px 0;
+  }
+
+  .page-title {
+    font-size: 26px;
+  }
+}
+
+/* Shared buttons used by cards, detail and VIP pages */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn-primary:hover {
+  opacity: 0.88;
+}
+
+.btn-outline {
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.btn-outline:hover {
+  background: var(--bg-hover);
+}
+
+.btn-outline[aria-pressed='true'] {
+  border-color: var(--text-strong);
+  color: var(--text-strong);
+}
+
+.vip-badge {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #ffe26a, #ffb800);
+  color: #3a2600; /* 8.31:1 */
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.shimmer {
+  background: var(--shimmer);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Page cross-fade (Nuxt experimental.viewTransition); fixed chrome stays put */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.22s;
+}
+
+::view-transition-group(header),
+::view-transition-group(sidebar),
+::view-transition-group(tabbar) {
+  animation: none;
+}
