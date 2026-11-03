@@ -1,18 +1,19 @@
 <script setup lang="ts">
-import { byCategory, featured, hotNow, latest } from '#shared/data/movies'
+const { byCategory, featured, hotNow, latest } = useCatalog()
 
-useHead({ title: 'RuengFlix - រឿងភាគខ្មែរ ពេញភាគ និងអាប់ដេតថ្មីៗ' })
+usePageMeta({})
 
-const { continueWatching, seriesProgress } = useLibrary()
-const top10 = hotNow.slice(0, 10)
+const { continueWatching } = useLibrary()
+const top10 = computed(() => hotNow.value.slice(0, 10))
+const forYou = useForYou()
 
 // Swipeable rows keep Home short; the full grids live on Browse, pre-filtered by "See all"
-const sections = [
-  { title: 'អាប់ដេតថ្មី', more: '/browse', items: latest.slice(0, 12) },
+const sections = computed(() => [
+  { title: 'អាប់ដេតថ្មី', more: '/browse', items: latest.value.slice(0, 12) },
   { title: 'ក្បាច់គុន និងពិភពអមតៈ', more: '/browse?category=cultivation', items: byCategory('cultivation') },
   { title: 'ស្នេហា និងមនោសញ្ចេតនា', more: '/browse?category=romance', items: byCategory('romance') },
   { title: 'ពិភពស្រមើស្រមៃ និងអព្ភូតហេតុ', more: '/browse?category=fantasy', items: byCategory('fantasy') }
-]
+])
 </script>
 
 <template>
@@ -29,13 +30,21 @@ const sections = [
           :items="[]"
           small
         >
-          <PosterCard
+          <ContinueCard
             v-for="{ entry, movie } in continueWatching"
             :key="movie.id"
             :movie="movie"
-            :progress="{ ep: entry.ep, total: movie.episodes, value: seriesProgress(entry, movie.episodes) }"
+            :entry="entry"
           />
         </MovieRow>
+        <MovieRow
+          v-if="forYou"
+          :title="`ព្រោះអ្នកចូលចិត្តរឿង${forYou.label}`"
+          :more="`/browse?category=${forYou.category}`"
+          :items="forYou.items"
+          small
+          :col="[168, 124]"
+        />
       </ClientOnly>
 
       <MovieRow title="កំពុងពេញនិយមថ្ងៃនេះ" more="/hot" :items="[]" small hot :col="[176, 150]">

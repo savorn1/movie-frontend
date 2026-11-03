@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { hotNow, hotWeek } from '#shared/data/movies'
+import { shareImage } from '#shared/data/movies'
 
-useHead({ title: 'ចំណាត់ថ្នាក់ - RuengFlix' })
+const { hotNow, hotWeek } = useCatalog()
+
+usePageMeta(() => ({
+  title: 'ចំណាត់ថ្នាក់',
+  description: `រឿងពេញនិយមបំផុតថ្ងៃនេះ និងសប្ដាហ៍នេះ។ លេខ ១៖ ${hotNow.value[0]?.title ?? ''}`,
+  image: hotNow.value[0] ? shareImage(hotNow.value[0]) : undefined
+}))
 
 const tabs = [
   { key: 'now', label: 'ពេញនិយមឥឡូវនេះ', items: hotNow },
@@ -10,7 +16,7 @@ const tabs = [
 
 type TabKey = (typeof tabs)[number]['key']
 const active = ref<TabKey>('now')
-const list = computed(() => tabs.find(t => t.key === active.value)!.items)
+const list = computed(() => tabs.find(t => t.key === active.value)!.items.value)
 
 // Arrow keys move between tabs, as with a native segmented control
 function onKey(e: KeyboardEvent) {

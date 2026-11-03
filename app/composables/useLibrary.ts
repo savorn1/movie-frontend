@@ -1,4 +1,4 @@
-import { isLocked, movies, type Movie } from '#shared/data/movies'
+import { isLocked, type Movie } from '#shared/data/movies'
 
 export interface HistoryEntry {
   id: number
@@ -17,6 +17,7 @@ export interface PlayerPrefs {
 
 // Per-viewer state kept in localStorage; the library.client plugin loads and persists it.
 export function useLibrary() {
+  const { find } = useCatalog()
   const history = useState<HistoryEntry[]>('library-history', () => [])
   const favorites = useState<number[]>('library-favorites', () => [])
   const recentSearches = useState<string[]>('library-searches', () => [])
@@ -25,10 +26,12 @@ export function useLibrary() {
   const prefs = useState<PlayerPrefs>('library-prefs', () => ({ speed: 1, captions: true, dataSaver: 'auto' }))
   /** Episode count each followed series had when last opened; anything above it is "new" */
   const seen = useState<Record<number, number>>('library-seen', () => ({}))
+  /** This viewer's vote per episode, keyed "seriesId:ep" */
+  const ratings = useState<Record<string, 1 | -1>>('library-ratings', () => ({}))
 
   const continueWatching = computed(() =>
     history.value
-      .map(h => ({ entry: h, movie: movies.find(m => m.id === h.id) }))
+      .map(h => ({ entry: h, movie: find(h.id) }))
       .filter((x): x is { entry: HistoryEntry; movie: Movie } => !!x.movie)
   )
 
@@ -81,13 +84,13 @@ export function useLibrary() {
 
   /** Call when someone opens a series: its current episodes are no longer "new" */
   function markSeen(id: number) {
-    const m = movies.find(x => x.id === id)
+    const m = find(id)
     if (m && isFollowing(id) && seen.value[id] !== m.episodes) seen.value = { ...seen.value, [id]: m.episodes }
   }
 
   /** New episodes in a followed series since it was last opened */
   function newEpisodes(id: number) {
-    const m = movies.find(x => x.id === id)
+    const m = find(id)
     if (!m || !isFollowing(id)) return 0
     return Math.max(0, m.episodes - (seen.value[id] ?? m.episodes))
   }
@@ -100,8 +103,34 @@ export function useLibrary() {
     if (!unlocked.value.includes(id)) unlocked.value = [...unlocked.value, id]
   }
 
+  const ratingOf = (id: number, ep: number) => ratings.value[`${id}:${ep}`]
+  /** Set a vote; voting the same way again clears it. Returns the previous vote. */
+  function rate(id: number, ep: number, vote: 1 | -1) {
+    const key = `${id}:${ep}`
+    const previous = ratings.value[key]
+    const next = { ...ratings.value }
+    if (previous === vote) delete next[key]
+    else next[key] = vote
+    ratings.value = next
+    return previous
+  }
+
   function addRecentSearch(term: string) {
     recentSearches.value = [term, ...recentSearches.value.filter(t => t !== term)].slice(0, 8)
+  }
+
+  /** Drop one series from "Continue watching"; returns the entry so it can be restored (Undo) */
+  function removeFromHistory(id: number) {
+    const index = history.value.findIndex(h => h.id === id)
+    const entry = history.value[index]
+    if (entry) history.value = history.value.filter(h => h.id !== id)
+    return entry ? { entry, index } : null
+  }
+
+  function restoreHistory({ entry, index }: { entry: HistoryEntry; index: number }) {
+    const list = history.value.filter(h => h.id !== entry.id)
+    list.splice(index, 0, entry)
+    history.value = list
   }
 
   const clearRecentSearches = () => (recentSearches.value = [])
@@ -115,12 +144,17 @@ export function useLibrary() {
     unlocked,
     prefs,
     seen,
+    ratings,
+    ratingOf,
+    rate,
     markSeen,
     newEpisodes,
     totalNew,
     continueWatching,
     recordWatch,
     saveProgress,
+    removeFromHistory,
+    restoreHistory,
     lastEpisode,
     resumeTime,
     seriesProgress,

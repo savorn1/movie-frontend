@@ -25,11 +25,66 @@ The choice is saved in a `theme` cookie, so the server renders an explicit choic
 - **Khmer digits** in display text via the auto-imported `kh()` helper. Prices, playback speed and the player clock keep Western digits.
 - **New-episode badges**: when someone follows a series, the site stores its episode count. Episodes added after that show as "វគ្គថ្មី" on posters and as a count on Me, until the series is opened again.
 
+## Link previews and search engines
+
+Every page calls `usePageMeta()` ([app/composables/usePageMeta.ts](app/composables/usePageMeta.ts)). It sets the title, description, canonical URL and the Open Graph and Twitter tags that Telegram, Facebook and Messenger read when a link is shared.
+
+- **Series and episode pages** use that series' artwork at 1200×630, with the Khmer title and episode count ("ឈោងយកផ្កាយ · ៣១ វគ្គ"). Series pages also carry `TVSeries` structured data for search engines.
+- **Other pages** use [public/og-default.png](public/og-default.png).
+- **Me and Search** are `noindex`, so search engines leave them out.
+- **Production:** set `NUXT_PUBLIC_SITE_URL` to your real domain. Crawlers need absolute URLs, and the default is `http://localhost:3000`.
+- **Khmer in preview images:** image generators such as satori can't lay out Khmer script, so any preview image with Khmer text should be rendered by a browser, as `og-default.png` was.
+- **Checking a preview:** after deploying, check with Facebook's [Sharing Debugger](https://developers.facebook.com/tools/debug/), which also refreshes its cache. Telegram caches previews too; [@WebpageBot](https://t.me/WebpageBot) refreshes them.
+
+## Engagement
+
+- **Share a moment:** the Share button in the player copies or shares `/watch/<id>/<ep>?t=<seconds>`. Opening that link starts playback at that second, overriding the viewer's own saved position.
+- **Episode ratings:** a 👍/👎 prompt appears at the end of every episode. The vote is saved in the browser and sent to `POST /api/ratings`, and `GET /api/ratings/<seriesId>` returns per-episode totals. Votes are anonymous and limited to 30 per minute per IP address, which slows spamming but doesn't stop it. Tie votes to accounts once login exists.
+- **"For you" row on Home:** it scores categories from the viewer's history, saves, follows and ratings, all inside their browser, then suggests popular series in their top category that they haven't started yet.
+
+## Admin dashboard (`/admin`)
+
+The series catalog is owned by the server. It's stored in Nitro storage `catalog` (`.data/catalog`) and seeded with the sample series on first run. Pages read it through `useCatalog()`, and it arrives with the first page load.
+
+**Set up:**
+
+```bash
+NUXT_ADMIN_PASSWORD=<a strong password>
+NUXT_SESSION_SECRET=<32+ random characters>   # encrypts the admin session cookie
+NUXT_TELEGRAM_ADMIN_CHAT=<chat id>            # optional: problem reports go to this Telegram chat
+```
+
+Without the first two, `/admin` shows "not configured" and every admin API answers 503. Admin is never open by default.
+
+The session is an encrypted, HTTP-only, SameSite=Strict cookie that lasts 12 hours. Login attempts are limited to 10 per 15 minutes per IP address.
+
+| Tab | What it does |
+|---|---|
+| **រឿង** (Series) | Search, toggle VIP, edit details (title, Latin search keywords, category, status, free episodes, recap length), add or delete a series. **ចេញវគ្គ N** publishes the next episode: paste its `.m3u8`/`.mp4` link, and optionally alert Telegram followers. |
+| **ការយល់ដឹង** (Insights) | Per episode: how many devices started it, how many finished it (90%), and **% continue**, the share of finishers who started the next episode. The biggest drop-off is highlighted. |
+| **របាយការណ៍** (Reports) | Viewer problem reports (video, subtitles, audio, other) with the exact second, a link to watch that moment, and Resolve with Undo. |
+
+Notes:
+- **Storage:** Nitro storage (`catalog`, `insights`, `reports`, `ratings`, `follows`) uses the `fs` driver. On a host without a persistent disk, switch them all to Redis or another key-value store in `nuxt.config.ts`.
+- **Insights accuracy:** insight events are anonymous and sent once per device per episode, so they count devices, not people.
+
+## Player extras
+
+| Feature | Where |
+|---|---|
+| Skip recap | Shown at the start of episodes 2+ for `recapSeconds` (set per series in Admin) |
+| Picture-in-picture | ⋯ menu (Chrome, Edge, Safari, Android) |
+| Sleep timer | ⋯ menu: stop at the end of this episode, or pause after 15/30/60 minutes |
+| Report a problem | ⋯ menu; saved for Admin and sent to `NUXT_TELEGRAM_ADMIN_CHAT` |
+| Share this moment | ⋯ menu |
+
+Other viewer features:
+- **Continue watching:** each card has ✕ to remove that series from the row, with Undo.
+- **Browse filters:** ongoing or completed, short (under 20 episodes) or long, and sort by most liked.
+
 ## Episode videos
 
-Episode URLs come from one function: `episodeSource()` in [shared/data/movies.ts](shared/data/movies.ts). Until real content exists it returns public 10-second MP4 test clips, plus an HLS test stream for every 5th episode.
-
-To use your own videos, have it return your HLS (`.m3u8`) or MP4 URL for each episode, and a WebVTT subtitle URL. HLS plays natively in Safari and current Chrome; other browsers load `hls.js` on demand. The sample Khmer subtitles come from [server/routes/subtitles/[id]/[file].ts](server/routes/subtitles/%5Bid%5D/%5Bfile%5D.ts); replace them with real `.vtt` files.
+Each episode's video link is set when it's published from **Admin → ចេញវគ្គ N**, or for episode 1 when the series is created. The link is stored in the series' `sources`. Episodes without a link fall back to public 10-second MP4 test clips, plus an HLS test stream for every 5th episode. `episodeSource()` in [shared/data/movies.ts](shared/data/movies.ts) makes that choice, and detects HLS from the `.m3u8` extension. HLS plays natively in Safari and current Chrome; other browsers load `hls.js` on demand. The sample Khmer subtitles come from [server/routes/subtitles/[id]/[file].ts](server/routes/subtitles/%5Bid%5D/%5Bfile%5D.ts); replace them with real `.vtt` files.
 
 ## Player
 

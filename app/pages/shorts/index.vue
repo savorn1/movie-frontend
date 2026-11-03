@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { hotWeek } from '#shared/data/movies'
 
 definePageMeta({ hideFooter: true, immersive: true })
-useHead({ title: 'ខ្លីៗ - RuengFlix' })
+usePageMeta({ title: 'ខ្លីៗ', description: 'អូសមើលរឿងភាគខ្លីៗ ហើយចាប់ផ្តើមមើលពេញរឿងភ្លាមៗ។' })
 
-const feed = hotWeek
+const { hotWeek: feed } = useCatalog()
 const { isSaved, toggleSave } = useSaveToggle()
 const { share } = useShare()
 
@@ -13,7 +12,7 @@ const slides = ref<HTMLElement[]>([])
 const active = ref(0)
 
 function goTo(i: number) {
-  const n = Math.max(0, Math.min(feed.length - 1, i))
+  const n = Math.max(0, Math.min(feed.value.length - 1, i))
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   slides.value[n]?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
 }

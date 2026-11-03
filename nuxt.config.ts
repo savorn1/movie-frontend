@@ -1,7 +1,7 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
-  devtools: { enabled: true },
+  devtools: { enabled: false },
   modules: ['@nuxt/fonts'],
   css: ['~/assets/css/main.css'],
   // Self-hosted from Google Fonts at build time, with metric-matched fallbacks to avoid layout shift.
@@ -23,6 +23,11 @@ export default defineNuxtConfig({
     telegramBotToken: '',
     telegramWebhookSecret: '',
     notifySecret: '',
+    // /admin: NUXT_ADMIN_PASSWORD, NUXT_SESSION_SECRET (32+ characters)
+    adminPassword: '',
+    sessionSecret: '',
+    // Telegram chat that receives viewer problem reports (NUXT_TELEGRAM_ADMIN_CHAT)
+    telegramAdminChat: '',
     public: {
       telegramBot: '',
       siteUrl: 'http://localhost:3000'
@@ -31,7 +36,14 @@ export default defineNuxtConfig({
   // Who follows which series (Telegram chat ids). Swap the fs driver for Redis/KV in production.
   nitro: {
     storage: {
-      follows: { driver: 'fs', base: './.data/follows' }
+      follows: { driver: 'fs', base: './.data/follows' },
+      // Episode 👍/👎 totals; swap for Redis/KV in production like `follows`
+      ratings: { driver: 'fs', base: './.data/ratings' },
+      // The series catalog edited from /admin (seeded with sample content on first run)
+      catalog: { driver: 'fs', base: './.data/catalog' },
+      // Per-episode starts/completions, and viewer problem reports
+      insights: { driver: 'fs', base: './.data/insights' },
+      reports: { driver: 'fs', base: './.data/reports' }
     }
   },
   // Cross-fades between pages; Nuxt skips it when Reduce Motion is on

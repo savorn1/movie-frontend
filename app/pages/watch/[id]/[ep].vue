@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { byCategory, movies } from '#shared/data/movies'
+import { shareImage } from '#shared/data/movies'
 
 const route = useRoute()
-const movie = computed(() => movies.find(m => m.id === Number(route.params.id)))
+const { find, byCategory } = useCatalog()
+const movie = computed(() => find(Number(route.params.id)))
 const ep = computed(() => Number(route.params.ep))
 
 if (!movie.value || !Number.isInteger(ep.value) || ep.value < 1 || ep.value > movie.value.episodes) {
@@ -20,7 +21,13 @@ const nextEp = computed(() => (ep.value < movie.value!.episodes ? ep.value + 1 :
 const nextLocked = computed(() => nextEp.value !== null && !canWatch(movie.value!, nextEp.value))
 const nextSeries = computed(() => similar.value[0])
 
-useHead({ title: () => `${movie.value?.title} វគ្គ ${kh(ep.value)} - RuengFlix` })
+usePageMeta(() => ({
+  title: `${movie.value!.title} វគ្គ ${kh(ep.value)}`,
+  description: `វគ្គ ${kh(ep.value)} នៃ ${kh(movie.value!.episodes)} · ${movie.value!.description}`,
+  image: shareImage(movie.value!),
+  imageAlt: movie.value!.title,
+  type: 'video.episode'
+}))
 </script>
 
 <template>

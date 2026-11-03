@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { byCategory, FREE_EPISODES, movies } from '#shared/data/movies'
+import { shareImage } from '#shared/data/movies'
 
 const route = useRoute()
-const movie = computed(() => movies.find(m => m.id === Number(route.params.id)))
+const { find, byCategory } = useCatalog()
+const movie = computed(() => find(Number(route.params.id)))
 
 if (!movie.value) {
   throw createError({ statusCode: 404, message: 'រកមិនឃើញរឿងនេះទេ' })
@@ -28,7 +29,36 @@ onMounted(() => {
 })
 onBeforeUnmount(() => window.removeEventListener('resize', measure))
 
-useHead({ title: () => `${movie.value?.title} - RuengFlix` })
+// Shown as the Telegram / Facebook preview: artwork, Khmer title with episode count, genres
+usePageMeta(() => ({
+  title: `${movie.value!.title} · ${kh(movie.value!.episodes)} វគ្គ`,
+  description: `${movie.value!.genres.join(' · ')} — ${movie.value!.description}`,
+  image: shareImage(movie.value!),
+  imageAlt: movie.value!.title,
+  type: 'video.tv_show'
+}))
+
+// Structured data so search engines understand this is a series
+const site = useRuntimeConfig().public.siteUrl.replace(/\/$/, '')
+useHead({
+  script: [{
+    key: 'ld-series',
+    type: 'application/ld+json',
+    innerHTML: () => JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'TVSeries',
+      'name': movie.value!.title,
+      'description': movie.value!.description,
+      'image': shareImage(movie.value!),
+      'url': `${site}/detail/${movie.value!.id}`,
+      'numberOfEpisodes': movie.value!.episodes,
+      'genre': movie.value!.genres,
+      'inLanguage': 'km',
+      'countryOfOrigin': { '@type': 'Country', 'name': 'China' },
+      'isAccessibleForFree': !movie.value!.vip
+    })
+  }]
+})
 </script>
 
 <template>
@@ -45,6 +75,7 @@ useHead({ title: () => `${movie.value?.title} - RuengFlix` })
         <p class="meta">
           <span v-if="movie.vip" class="vip-badge">VIP</span>
           {{ kh(movie.year) }} · {{ movie.region }} · {{ kh(movie.episodes) }} វគ្គ
+          <span class="status" :class="movie.status">{{ movie.status === 'ongoing' ? 'កំពុងចាក់' : 'ចប់ហើយ' }}</span>
         </p>
         <div class="tags">
           <NuxtLink v-for="g in movie.genres" :key="g" :to="{ path: '/search', query: { wd: g } }">{{ g }}</NuxtLink>
@@ -67,7 +98,7 @@ useHead({ title: () => `${movie.value?.title} - RuengFlix` })
         </div>
 
         <p v-if="movie.vip" class="vip-note">
-          វគ្គ ១–{{ kh(FREE_EPISODES) }} មើលដោយឥតគិតថ្លៃ។ វគ្គបន្ទាប់ត្រូវការ
+          វគ្គ ១–{{ kh(movie.freeEpisodes) }} មើលដោយឥតគិតថ្លៃ។ វគ្គបន្ទាប់ត្រូវការ
           <NuxtLink to="/vip">សមាជិក VIP</NuxtLink>។
         </p>
       </div>
@@ -157,6 +188,21 @@ h1 {
   margin: 0 0 8px;
   color: var(--text-strong);
   font-size: clamp(28px, 3.4vw, 40px);
+}
+
+.status {
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--bg-elev-2);
+  font-size: 13px;
+}
+
+.status.ongoing {
+  color: #33c46a;
+}
+
+:root[data-theme='light'] .status.ongoing {
+  color: #137a3a;
 }
 
 .meta {

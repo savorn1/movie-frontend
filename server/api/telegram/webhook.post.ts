@@ -1,5 +1,3 @@
-import { movies } from '#shared/data/movies'
-
 interface TgUpdate {
   message?: {
     chat: { id: number }
@@ -27,6 +25,7 @@ export default defineEventHandler(async (event) => {
   if (!chatId || !text.startsWith('/')) return { ok: true }
 
   const [command, arg] = text.split(/\s+/, 2)
+  const movies = await getCatalog()
   const site = pub.siteUrl.replace(/\/$/, '')
 
   if (command === '/start' && arg?.startsWith('s')) {

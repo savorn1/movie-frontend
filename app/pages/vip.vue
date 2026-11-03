@@ -1,5 +1,5 @@
 <script setup lang="ts">
-useHead({ title: 'សមាជិក VIP - RuengFlix' })
+usePageMeta({ title: 'សមាជិក VIP', description: 'ដោះសោគ្រប់វគ្គ VIP កម្រិតរូបភាព Full HD ចាប់ពី $1.25 ក្នុងមួយខែ។' })
 
 interface Plan {
   id: string

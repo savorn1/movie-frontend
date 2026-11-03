@@ -1,5 +1,3 @@
-import { movies } from '#shared/data/movies'
-
 /*
  * Sample Khmer subtitle track (WebVTT) so captions can be tested end to end.
  * Replace with real .vtt files per episode alongside the video source.
@@ -11,10 +9,10 @@ const lines = [
   'ចាំមើលវគ្គបន្ទាប់!'
 ]
 
-export default defineEventHandler((event) => {
+export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   const ep = Number(getRouterParam(event, 'file')?.replace(/\.vtt$/, ''))
-  const movie = movies.find(m => m.id === id)
+  const movie = await findSeries(id)
   if (!movie || !Number.isInteger(ep) || ep < 1 || ep > movie.episodes) {
     throw createError({ statusCode: 404 })
   }

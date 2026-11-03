@@ -1,44 +1,82 @@
 <script setup lang="ts">
-import { browseMovies, categoryLabels, type AccessKey, type Movie, type SortKey } from '#shared/data/movies'
+import {
+  categoryLabels, SHORT_SERIES,
+  type AccessKey, type Category, type LengthKey, type LikeTotals, type SortKey, type StatusKey
+} from '#shared/data/movies'
 
-useHead({ title: 'រុករករឿង - RuengFlix' })
+usePageMeta({ title: 'រុករករឿង', description: 'រុករករឿងភាគខ្មែរតាមប្រភេទ៖ ក្បាច់គុន ស្នេហា និងពិភពស្រមើស្រមៃ។ តម្រៀបតាមថ្មីបំផុត ពេញនិយម ឬអ្នកទស្សនាចូលចិត្តបំផុត។' })
 
-type CategoryKey = Movie['category'] | 'all'
+interface Option<K> { key: K; label: string }
 
-const categories: { key: CategoryKey; label: string }[] = [
+const categories: Option<Category | 'all'>[] = [
   { key: 'all', label: 'ទាំងអស់' },
-  ...(Object.entries(categoryLabels) as [Movie['category'], string][]).map(([key, label]) => ({ key, label }))
+  ...(Object.entries(categoryLabels) as [Category, string][]).map(([key, label]) => ({ key, label }))
 ]
-const accessOptions: { key: AccessKey; label: string }[] = [
+// Secondary filters share one row of small chip groups
+const accessOptions: Option<AccessKey>[] = [
   { key: 'all', label: 'ទាំងអស់' },
   { key: 'free', label: 'ឥតគិតថ្លៃ' },
   { key: 'vip', label: 'VIP' }
 ]
-const sortOptions: { key: SortKey; label: string }[] = [
+const statusOptions: Option<StatusKey>[] = [
+  { key: 'all', label: 'ទាំងអស់' },
+  { key: 'ongoing', label: 'កំពុងចាក់' },
+  { key: 'completed', label: 'ចប់ហើយ' }
+]
+const lengthOptions: Option<LengthKey>[] = [
+  { key: 'all', label: 'គ្រប់ប្រវែង' },
+  { key: 'short', label: `ខ្លី (< ${kh(SHORT_SERIES)} វគ្គ)` },
+  { key: 'long', label: 'វែង' }
+]
+const groups = [
+  { name: 'access' as const, label: 'សិទ្ធិមើល', options: accessOptions },
+  { name: 'status' as const, label: 'ស្ថានភាព', options: statusOptions },
+  { name: 'length' as const, label: 'ប្រវែង', options: lengthOptions }
+]
+const sortOptions: Option<SortKey>[] = [
   { key: 'latest', label: 'ថ្មីបំផុត' },
   { key: 'popular', label: 'ពេញនិយម' },
+  { key: 'liked', label: 'ចូលចិត្តបំផុត 👍' },
   { key: 'episodes', label: 'វគ្គច្រើន' }
 ]
 
 // Filters live in the URL so a filtered view can be shared or reloaded
 const route = useRoute()
 const router = useRouter()
-const pick = <T extends string>(v: unknown, allowed: { key: T }[], fallback: T) =>
+const pick = <T extends string>(v: unknown, allowed: Option<T>[], fallback: T) =>
   allowed.some(o => o.key === v) ? (v as T) : fallback
 
 const category = computed(() => pick(route.query.category, categories, 'all'))
-const access = computed(() => pick(route.query.access, accessOptions, 'all'))
+const selected = computed(() => ({
+  access: pick(route.query.access, accessOptions, 'all'),
+  status: pick(route.query.status, statusOptions, 'all'),
+  length: pick(route.query.length, lengthOptions, 'all')
+}))
 const sort = computed(() => pick(route.query.sort, sortOptions, 'latest'))
 
-function set(key: 'category' | 'access' | 'sort', value: string) {
-  const defaults = { category: 'all', access: 'all', sort: 'latest' }
-  const query = { ...route.query, [key]: value === defaults[key] ? undefined : value }
-  router.replace({ query })
+type FilterKey = 'category' | 'access' | 'status' | 'length' | 'sort'
+const defaults: Record<FilterKey, string> = { category: 'all', access: 'all', status: 'all', length: 'all', sort: 'latest' }
+
+function set(key: FilterKey, value: string) {
+  router.replace({ query: { ...route.query, [key]: value === defaults[key] ? undefined : value } })
 }
 
-const results = computed(() => browseMovies({ category: category.value, access: access.value, sort: sort.value }))
-const filtered = computed(() => category.value !== 'all' || access.value !== 'all')
-const reset = () => router.replace({ query: {} })
+// Like totals only matter for the "most liked" sort, so fetch them lazily
+const { data: likes, status: likesStatus, execute: loadLikes } = useLazyFetch<Record<number, LikeTotals>>('/api/ratings/summary', {
+  default: () => ({}),
+  immediate: false,
+  server: false
+})
+onMounted(() => {
+  watch(sort, (s) => {
+    if (s === 'liked' && likesStatus.value === 'idle') loadLikes()
+  }, { immediate: true })
+})
+const { browse } = useCatalog()
+
+const results = computed(() => browse({ category: category.value, ...selected.value, sort: sort.value }, likes.value))
+const filtered = computed(() => category.value !== 'all' || Object.values(selected.value).some(v => v !== 'all'))
+const reset = () => router.replace({ query: sort.value === 'latest' ? {} : { sort: sort.value } })
 </script>
 
 <template>
@@ -59,16 +97,18 @@ const reset = () => router.replace({ query: {} })
       </div>
 
       <div class="row">
-        <div class="chips small" role="group" aria-label="សិទ្ធិមើល">
-          <button
-            v-for="a in accessOptions"
-            :key="a.key"
-            type="button"
-            :aria-pressed="access === a.key"
-            @click="set('access', a.key)"
-          >
-            {{ a.label }}
-          </button>
+        <div class="groups">
+          <div v-for="g in groups" :key="g.name" class="chips small" role="group" :aria-label="g.label">
+            <button
+              v-for="o in g.options"
+              :key="o.key"
+              type="button"
+              :aria-pressed="selected[g.name] === o.key"
+              @click="set(g.name, o.key)"
+            >
+              {{ o.label }}
+            </button>
+          </div>
         </div>
 
         <label class="sort">
@@ -152,6 +192,24 @@ const reset = () => router.replace({ query: {} })
   background: var(--text-strong);
   color: var(--bg);
   font-weight: 600;
+}
+
+.groups {
+  display: flex;
+  gap: 8px 16px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.groups::-webkit-scrollbar {
+  display: none;
+}
+
+/* A thin divider between chip groups */
+.groups .chips + .chips {
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
 }
 
 .chips.small button {

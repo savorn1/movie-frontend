@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { searchMovies } from '#shared/data/movies'
 
 const route = useRoute()
 const term = computed(() => String(route.query.wd ?? '').trim())
-const results = computed(() => searchMovies(term.value))
+const { search } = useCatalog()
+const results = computed(() => search(term.value))
 
-useHead({ title: () => (term.value ? `ស្វែងរក “${term.value}” - RuengFlix` : 'ស្វែងរក - RuengFlix') })
+usePageMeta(() => ({ title: term.value ? `ស្វែងរក “${term.value}”` : 'ស្វែងរក', noindex: true }))
 </script>
 
 <template>

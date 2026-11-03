@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FREE_EPISODES, SERIES_UNLOCK_PRICE, type Movie } from '#shared/data/movies'
+import { SERIES_UNLOCK_PRICE, type Movie } from '#shared/data/movies'
 
 const props = defineProps<{ movie: Movie; ep: number }>()
 const emit = defineEmits<{ unlocked: [] }>()
@@ -23,7 +23,7 @@ function simulateUnlock() {
     <div class="card">
       <span class="lock"><AppIcon name="lock" :size="22" solid /></span>
       <h2 id="wall-title">វគ្គ {{ kh(ep) }} ជាវគ្គ VIP</h2>
-      <p class="lead">អ្នកបានមើលវគ្គឥតគិតថ្លៃ ១–{{ kh(FREE_EPISODES) }} ហើយ។ ដោះសោដើម្បីដឹងរឿងបន្ត។</p>
+      <p class="lead">អ្នកបានមើលវគ្គឥតគិតថ្លៃ ១–{{ kh(movie.freeEpisodes) }} ហើយ។ ដោះសោដើម្បីដឹងរឿងបន្ត។</p>
 
       <div class="options">
         <button type="button" class="option primary" @click="paying = true">
@@ -49,8 +49,8 @@ function simulateUnlock() {
         </button>
       </div>
 
-      <NuxtLink :to="`/watch/${movie.id}/${FREE_EPISODES}`" class="back">
-        ត្រឡប់ទៅវគ្គ {{ kh(FREE_EPISODES) }}
+      <NuxtLink :to="`/watch/${movie.id}/${movie.freeEpisodes}`" class="back">
+        ត្រឡប់ទៅវគ្គ {{ kh(movie.freeEpisodes) }}
       </NuxtLink>
     </div>
   </div>

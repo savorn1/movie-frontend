@@ -1,6 +1,6 @@
 /* RuengFlix service worker: offline page, cached app files, and recently visited pages.
    Video, the API and subtitles always go to the network. Bump VERSION to drop old caches. */
-const VERSION = 'v1'
+const VERSION = 'v2'
 const SHELL = `shell-${VERSION}`
 const ASSETS = `assets-${VERSION}`
 const PAGES = `pages-${VERSION}`
@@ -32,7 +32,7 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return
   const url = new URL(req.url)
   if (url.origin !== self.location.origin) return
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/subtitles/')) return
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/subtitles/') || url.pathname.startsWith('/admin')) return
 
   // Pages: network first, then the last copy of that page, then the offline page
   if (req.mode === 'navigate') {

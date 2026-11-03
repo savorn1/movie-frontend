@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import type Hls from 'hls.js'
-import { byCategory, episodeSource, type Movie } from '#shared/data/movies'
+import { episodeSource, type Movie } from '#shared/data/movies'
+import type { SleepMode } from '~/composables/useSleepTimer'
 
 const props = defineProps<{ movie: Movie; ep: number }>()
 
 const { canWatch, recordWatch, saveProgress, resumeTime, prefs, markSeen } = useLibrary()
 const { show } = useToast()
+const { share } = useShare()
+const route = useRoute()
 const { active: saveData } = useDataSaver()
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
@@ -28,13 +31,37 @@ const countdown = ref<number | null>(null)
 const wallEp = ref<number | null>(null)
 const skipHint = ref<{ side: 'left' | 'right'; key: number } | null>(null)
 const isFullscreen = ref(false)
+const moreOpen = ref(false)
+const reporting = ref(false)
+const pipSupported = ref(false)
+const inPip = ref(false)
+
+const { track } = useInsights()
+const sleep = useSleepTimer()
+const sleepOptions: { value: SleepMode; label: string }[] = [
+  { value: 'off', label: 'បិទ' },
+  { value: 'episode', label: 'ចប់វគ្គនេះ' },
+  { value: '15', label: '១៥ នាទី' },
+  { value: '30', label: '៣០ នាទី' },
+  { value: '60', label: '៦០ នាទី' }
+]
+
+// Skip recap: episodes 2+ open with a recap of the last one
+const showSkipRecap = computed(() =>
+  props.ep > 1 && props.movie.recapSeconds > 0 && !wallEp.value
+  && duration.value > props.movie.recapSeconds + 1 && current.value < props.movie.recapSeconds
+)
+function skipRecap() {
+  if (video.value) video.value.currentTime = props.movie.recapSeconds
+}
 const pseudoFullscreen = ref(false)
 
-const source = computed(() => episodeSource(props.movie.id, props.ep))
+const { byCategory } = useCatalog()
+const source = computed(() => episodeSource(props.movie, props.ep))
 const nextEp = computed(() => (props.ep < props.movie.episodes ? props.ep + 1 : null))
 const prevEp = computed(() => (props.ep > 1 ? props.ep - 1 : null))
 const nextSeries = computed(() => byCategory(props.movie.category).find(m => m.id !== props.movie.id))
-const nextSource = computed(() => (nextEp.value && canWatch(props.movie, nextEp.value) ? episodeSource(props.movie.id, nextEp.value) : null))
+const nextSource = computed(() => (nextEp.value && canWatch(props.movie, nextEp.value) ? episodeSource(props.movie, nextEp.value) : null))
 // Warm the next MP4 once this episode is half watched, so the switch feels instant
 // (skipped in data-saver mode: it would spend mobile data on an episode that may not be watched)
 const preloadNext = computed(() =>
@@ -101,11 +128,24 @@ function onLoadedMetadata() {
   const el = video.value!
   duration.value = el.duration
   applyCaptions()
+  // A shared moment (?t=42) wins over the viewer's own saved position
+  const shared = Number(route.query.t)
+  if (Number.isFinite(shared) && shared > 0 && shared < el.duration - 1) {
+    el.currentTime = shared
+    show(`ចាប់ផ្តើមពី ${fmt(shared)} ដែលបានចែករំលែក`, { label: 'ចាប់ផ្តើមពីដើម', run: () => video.value && (video.value.currentTime = 0) })
+    return
+  }
   const t = resumeTime(props.movie.id, props.ep)
   if (t > 3) {
     el.currentTime = t
     show(`បន្តពី ${fmt(t)}`, { label: 'ចាប់ផ្តើមពីដើម', run: () => video.value && (video.value.currentTime = 0) })
   }
+}
+
+/** Share a link that opens this episode at the current second */
+function shareMoment() {
+  const t = Math.floor(current.value)
+  share(`${props.movie.title} វគ្គ ${kh(props.ep)} · ${fmt(t)}`, `/watch/${props.movie.id}/${props.ep}?t=${t}`)
 }
 
 let lastSave = 0
@@ -114,6 +154,17 @@ function onTimeUpdate() {
   current.value = el.currentTime
   if (el.buffered.length) bufferedEnd.value = el.buffered.end(el.buffered.length - 1)
   if (Date.now() - lastSave > 3000) persist()
+  if (el.duration && el.currentTime / el.duration >= 0.9) track(props.movie.id, props.ep, 'complete')
+  if (sleep.expired()) {
+    el.pause()
+    sleep.clear()
+    show('ម៉ោងគេង៖ បានផ្អាកវីដេអូ')
+  }
+}
+
+function onPlay() {
+  playing.value = true
+  track(props.movie.id, props.ep, 'start')
 }
 
 function persist() {
@@ -132,6 +183,11 @@ function onEnded() {
   persist()
   const n = nextEp.value
   if (!n) return
+  if (sleep.stopAtEpisodeEnd.value) {
+    sleep.clear()
+    show('ម៉ោងគេង៖ ឈប់បន្ទាប់ពីវគ្គនេះ')
+    return
+  }
   if (!canWatch(props.movie, n)) {
     // Cliffhanger wall over the frozen last frame
     wallEp.value = n
@@ -216,6 +272,18 @@ function stepSpeed(dir: 1 | -1) {
 function applyCaptions() {
   const track = video.value?.textTracks[0]
   if (track) track.mode = prefs.value.captions ? 'showing' : 'hidden'
+  liftCues()
+}
+
+// Cues default to the very bottom of the video, which on phones sits under the control bar.
+// Lift every cue a few lines up (works for any subtitle file, not just the samples).
+function liftCues() {
+  const cues = video.value?.textTracks[0]?.cues
+  for (const cue of Array.from(cues ?? [])) {
+    const c = cue as VTTCue
+    c.snapToLines = true
+    c.line = -4
+  }
 }
 
 function toggleCaptions() {
@@ -330,7 +398,36 @@ function onKey(e: KeyboardEvent) {
 // ---------- Lifecycle ----------
 const onPageHide = () => persist()
 
+// ---------- Picture-in-picture ----------
+async function togglePip() {
+  const el = video.value as HTMLVideoElement & { webkitSetPresentationMode?: (m: string) => void; webkitPresentationMode?: string }
+  if (!el) return
+  moreOpen.value = false
+  try {
+    if (document.pictureInPictureElement) await document.exitPictureInPicture()
+    else if (el.requestPictureInPicture) await el.requestPictureInPicture()
+    else el.webkitSetPresentationMode?.(el.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture')
+  } catch {
+    show('មិនអាចបើករូបភាពក្នុងរូបភាពបានទេ')
+  }
+}
+
+function openReport() {
+  moreOpen.value = false
+  video.value?.pause()
+  reporting.value = true
+}
+
+function onMoreOutside(e: MouseEvent) {
+  if (moreOpen.value && !(e.target as HTMLElement).closest('.more-wrap')) moreOpen.value = false
+}
+
 onMounted(() => {
+  const v = video.value as (HTMLVideoElement & { webkitSupportsPresentationMode?: (m: string) => boolean }) | undefined
+  pipSupported.value = (!!document.pictureInPictureEnabled && !v?.disablePictureInPicture)
+    || !!v?.webkitSupportsPresentationMode?.('picture-in-picture')
+  // Capture phase: the control bar stops click propagation
+  document.addEventListener('click', onMoreOutside, true)
   window.addEventListener('keydown', onKey)
   window.addEventListener('pagehide', onPageHide)
   document.addEventListener('fullscreenchange', onFullscreenChange)
@@ -343,6 +440,7 @@ onBeforeUnmount(() => {
   clearInterval(tick)
   clearTimeout(hideTimer)
   clearTimeout(singleTapTimer)
+  document.removeEventListener('click', onMoreOutside, true)
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('pagehide', onPageHide)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
@@ -375,14 +473,16 @@ function onUnlocked() {
       preload="metadata"
       @loadedmetadata="onLoadedMetadata"
       @timeupdate="onTimeUpdate"
-      @play="playing = true"
+      @play="onPlay"
+      @enterpictureinpicture="inPip = true"
+      @leavepictureinpicture="inPip = false"
       @pause="playing = false; persist()"
       @ended="onEnded"
       @waiting="waiting = true"
       @playing="waiting = false"
       @volumechange="muted = video!.muted"
     >
-      <track kind="subtitles" srclang="km" label="ខ្មែរ" :src="source.subtitles" default>
+      <track kind="subtitles" srclang="km" label="ខ្មែរ" :src="source.subtitles" default @load="liftCues">
     </video>
 
     <!-- Tap / click surface for gestures -->
@@ -430,6 +530,7 @@ function onUnlocked() {
       <div class="ring" :style="{ '--p': (COUNTDOWN - countdown) / COUNTDOWN }" aria-hidden="true">
         <span>{{ kh(countdown) }}</span>
       </div>
+      <EpisodeRating :movie-id="movie.id" :ep="ep" />
       <div class="row">
         <button type="button" class="btn btn-glass" @click="cancelCountdown">បោះបង់</button>
         <button type="button" class="btn btn-primary" @click="goEp(nextEp)">
@@ -442,6 +543,7 @@ function onUnlocked() {
     <div v-else-if="ended && !wallEp" class="overlay">
       <template v-if="nextEp">
         <p class="eyebrow">ចប់វគ្គ {{ kh(ep) }}</p>
+        <EpisodeRating :movie-id="movie.id" :ep="ep" />
         <div class="row">
           <button type="button" class="btn btn-glass" @click="replay">មើលម្តងទៀត</button>
           <button type="button" class="btn btn-primary" @click="goEp(nextEp)">
@@ -451,6 +553,7 @@ function onUnlocked() {
       </template>
       <template v-else>
         <p class="eyebrow">ចប់រឿង {{ movie.title }}</p>
+        <EpisodeRating :movie-id="movie.id" :ep="ep" />
         <NuxtLink v-if="nextSeries" :to="`/watch/${nextSeries.id}/1`" class="next-series">
           <img :src="nextSeries.poster" alt="">
           <span>
@@ -492,6 +595,37 @@ function onUnlocked() {
         </button>
         <span class="time">{{ fmt(current) }} / {{ fmt(duration) }}</span>
         <span class="spacer" />
+        <!-- Less frequent actions live in a "More" panel so the bar stays usable on phones -->
+        <div class="more-wrap">
+          <button
+            type="button"
+            class="icon-btn"
+            aria-label="ជម្រើសបន្ថែម"
+            aria-haspopup="true"
+            :aria-expanded="moreOpen"
+            @click="moreOpen = !moreOpen"
+          >
+            <AppIcon name="more" :size="22" />
+          </button>
+          <div v-if="moreOpen" class="more-panel" role="group" aria-label="ជម្រើសបន្ថែម" @keydown.esc="moreOpen = false">
+            <button type="button" @click="shareMoment(); moreOpen = false">
+              <AppIcon name="share" :size="18" />ចែករំលែកពេលនេះ
+            </button>
+            <button v-if="pipSupported" type="button" @click="togglePip">
+              <AppIcon name="pip" :size="18" />{{ inPip ? 'បិទរូបភាពក្នុងរូបភាព' : 'រូបភាពក្នុងរូបភាព' }}
+            </button>
+            <label class="sleep">
+              <AppIcon name="moon" :size="18" />
+              <span>ម៉ោងគេង</span>
+              <select :value="sleep.state.value.mode" @change="sleep.set(($event.target as HTMLSelectElement).value as SleepMode)">
+                <option v-for="o in sleepOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+              </select>
+            </label>
+            <button type="button" @click="openReport">
+              <AppIcon name="flag" :size="18" />រាយការណ៍បញ្ហា
+            </button>
+          </div>
+        </div>
         <button
           type="button"
           class="icon-btn text"
@@ -519,6 +653,12 @@ function onUnlocked() {
         </button>
       </div>
     </div>
+
+    <button v-if="showSkipRecap && !moreOpen" type="button" class="skip-recap" @click.stop="skipRecap">
+      <AppIcon name="skip" :size="16" />រំលងសង្ខេប
+    </button>
+
+    <ReportDialog v-if="reporting" :series-id="movie.id" :ep="ep" :time="current" @close="reporting = false" />
 
     <!-- Hidden warm-up of the next episode -->
     <video v-if="preloadNext && nextSource" class="warm" :src="nextSource.src" preload="auto" muted aria-hidden="true" tabindex="-1" />
@@ -926,6 +1066,77 @@ function onUnlocked() {
 
 .phone {
   display: none;
+}
+
+.more-wrap {
+  position: relative;
+}
+
+.more-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 6;
+  display: grid;
+  min-width: 230px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(24, 24, 28, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.more-panel > button,
+.more-panel .sleep {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 14px;
+  text-align: left;
+}
+
+.more-panel > button:hover,
+.more-panel .sleep:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sleep select {
+  margin-left: auto;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: inherit;
+}
+
+.sleep option {
+  color: #000;
+}
+
+.skip-recap {
+  position: absolute;
+  right: 16px;
+  bottom: 84px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #000;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.skip-recap:hover {
+  background: #fff;
 }
 
 .warm {

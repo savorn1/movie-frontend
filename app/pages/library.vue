@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { movies } from '#shared/data/movies'
+const { find } = useCatalog()
 
-useHead({ title: 'ខ្ញុំ - RuengFlix' })
+usePageMeta({ title: 'ខ្ញុំ', noindex: true })
 
-const { history, continueWatching, favorites, following, seriesProgress, prefs } = useLibrary()
+const { history, continueWatching, favorites, following, prefs } = useLibrary()
 const { reason: saverReason } = useDataSaver()
 const { state: installState, install } = useInstallApp()
 const hydrated = useHydrated()
@@ -19,10 +19,10 @@ const saverOptions = [
 const { show } = useToast()
 
 const favoriteMovies = computed(() =>
-  favorites.value.map(id => movies.find(m => m.id === id)).filter(m => !!m)
+  favorites.value.map(find).filter(m => !!m)
 )
 const followingMovies = computed(() =>
-  following.value.map(id => movies.find(m => m.id === id)).filter(m => !!m)
+  following.value.map(find).filter(m => !!m)
 )
 const episodesWatched = computed(() => history.value.reduce((n, h) => n + h.ep, 0))
 
@@ -92,11 +92,11 @@ function clearHistory() {
           <button v-if="continueWatching.length" type="button" class="link" @click="clearHistory">សម្អាតប្រវត្តិ</button>
         </div>
         <div v-if="continueWatching.length" class="grid">
-          <PosterCard
+          <ContinueCard
             v-for="{ entry, movie } in continueWatching"
             :key="movie.id"
             :movie="movie"
-            :progress="{ ep: entry.ep, total: movie.episodes, value: seriesProgress(entry, movie.episodes) }"
+            :entry="entry"
           />
         </div>
         <EmptyState v-else icon="history" message="រឿងដែលអ្នកមើលនឹងបង្ហាញនៅទីនេះ ដើម្បីបន្តមើលពីវគ្គចុងក្រោយ។">

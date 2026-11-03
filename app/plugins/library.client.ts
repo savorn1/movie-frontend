@@ -1,7 +1,7 @@
 const KEY = 'ruengflix-library'
 
 export default defineNuxtPlugin((nuxtApp) => {
-  const { history, favorites, recentSearches, following, unlocked, prefs, seen } = useLibrary()
+  const { history, favorites, recentSearches, following, unlocked, prefs, seen, ratings } = useLibrary()
 
   // Per-viewer UI (badges, counts) waits until after hydration so it never mismatches the server HTML
   // (app:suspense:resolve, not app:mounted: the page can still be hydrating when app:mounted fires,
@@ -21,9 +21,10 @@ export default defineNuxtPlugin((nuxtApp) => {
     }
     if (saved.prefs && typeof saved.prefs === 'object') prefs.value = { ...prefs.value, ...saved.prefs }
     if (saved.seen && typeof saved.seen === 'object') seen.value = saved.seen
+    if (saved.ratings && typeof saved.ratings === 'object') ratings.value = saved.ratings
   } catch {}
 
-  watch([history, favorites, recentSearches, following, unlocked, prefs, seen], () => {
+  watch([history, favorites, recentSearches, following, unlocked, prefs, seen, ratings], () => {
     try {
       localStorage.setItem(KEY, JSON.stringify({
         history: history.value,
@@ -32,7 +33,8 @@ export default defineNuxtPlugin((nuxtApp) => {
         following: following.value,
         unlocked: unlocked.value,
         prefs: prefs.value,
-        seen: seen.value
+        seen: seen.value,
+        ratings: ratings.value
       }))
     } catch {}
   }, { deep: true })

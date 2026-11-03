@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { searchMovies } from '#shared/data/movies'
 
 const props = defineProps<{ initial?: string; autofocus?: boolean }>()
 
@@ -21,7 +20,8 @@ watch(query, (v) => {
   activeIndex.value = -1
 })
 
-const results = computed(() => searchMovies(debounced.value).slice(0, 6))
+const { search } = useCatalog()
+const results = computed(() => search(debounced.value).slice(0, 6))
 const typing = computed(() => debounced.value.trim().length > 0)
 
 function submit(term = query.value) {
