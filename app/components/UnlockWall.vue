@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Movie } from '#shared/data/movies'
+import type { Product } from './KhqrPay.vue'
 
 const props = defineProps<{ movie: Movie; ep: number }>()
 const emit = defineEmits<{ unlocked: [] }>()
@@ -7,11 +8,68 @@ const emit = defineEmits<{ unlocked: [] }>()
 const { unlockSeries } = useLibrary()
 const { show } = useToast()
 const { prices, planPrice } = useSite()
+const { viewer, enabled: accountsOn } = useViewer()
+const { wallet, refresh: refreshWallet, unlockEpisode } = useWallet()
+const { reload } = useSeriesEpisodes()
+const route = useRoute()
 
-const paying = ref(false)
 const isDev = import.meta.dev
+const busy = ref(false)
+const error = ref('')
+const paying = ref<{ product: Product; label: string } | null>(null)
 
-// KHQR isn't connected yet; the dev-only button lets you test the unlocked flow.
+/*
+ * Episodes of movie-api series are sold for real: one episode with coins, the whole series or VIP with
+ * KHQR. Only the server decides what's unlocked, so after paying we ask it again before playing.
+ * The sample series have no payments; in development a button stands in.
+ */
+const sells = computed(() => !!props.movie.remote && accountsOn.value)
+const episodeCoins = computed(() => wallet.value?.episodeCoins ?? 20)
+const enoughCoins = computed(() => (wallet.value?.coins ?? 0) >= episodeCoins.value)
+const smallestPack = computed(() => prices.value.coinPacks[0]?.price ?? 0.99)
+const loginLink = computed(() => ({ path: '/login', query: { next: route.fullPath } }))
+
+onMounted(() => {
+  if (viewer.value) refreshWallet()
+})
+watch(() => viewer.value?.id, (id) => id && refreshWallet())
+
+async function opened(message: string) {
+  await reload(props.movie.id)
+  // Let the player see the new links before it tries again
+  await nextTick()
+  show(message)
+  emit('unlocked')
+}
+
+async function payWithCoins() {
+  error.value = ''
+  busy.value = true
+  try {
+    const r = await unlockEpisode(props.movie.id, props.ep)
+    await opened(r.charged ? `បានដោះសោវគ្គ ${kh(props.ep)} · −${kh(r.charged)} កាក់` : `វគ្គ ${kh(props.ep)} បានដោះសោរួចហើយ`)
+  } catch (err) {
+    error.value = paymentError(err)
+  } finally {
+    busy.value = false
+  }
+}
+
+function buy(product: Product, label: string) {
+  paying.value = { product, label }
+}
+
+async function onPaid() {
+  const kind = paying.value?.product.kind
+  paying.value = null
+  await refreshWallet()
+  if (kind === 'COINS') {
+    show('បានបញ្ចូលកាក់')
+    return
+  }
+  await opened(kind === 'VIP' ? 'អ្នកជាសមាជិក VIP ហើយ' : `បានដោះសោ “${props.movie.title}”`)
+}
+
 function simulateUnlock() {
   unlockSeries(props.movie.id)
   show(`បានដោះសោ “${props.movie.title}”`)
@@ -26,14 +84,43 @@ function simulateUnlock() {
       <h2 id="wall-title">វគ្គ {{ kh(ep) }} ជាវគ្គ VIP</h2>
       <p class="lead">អ្នកបានមើលវគ្គឥតគិតថ្លៃ ១–{{ kh(movie.freeEpisodes) }} ហើយ។ ដោះសោដើម្បីដឹងរឿងបន្ត។</p>
 
-      <div class="options">
-        <button type="button" class="option primary" @click="paying = true">
+      <template v-if="sells && !viewer">
+        <NuxtLink :to="loginLink" class="btn btn-primary signin">ចូលគណនីដើម្បីដោះសោ</NuxtLink>
+        <p class="hint">ការដោះសោរក្សាទុកក្នុងគណនី ហើយមើលបានលើគ្រប់ឧបករណ៍។</p>
+      </template>
+
+      <div v-else-if="sells" class="options">
+        <button type="button" class="option primary" :disabled="busy" @click="enoughCoins ? payWithCoins() : buy({ kind: 'COINS', coins: 100 }, 'ទិញកាក់ ១០០')">
           <span class="o-head">
-            <strong>ដោះសោរឿងនេះ</strong>
+            <strong>ដោះសោវគ្គនេះ</strong>
+            <span class="price"><AppIcon name="coin" :size="18" /> {{ kh(episodeCoins) }}</span>
+          </span>
+          <span class="o-sub">
+            អ្នកមាន {{ kh(wallet?.coins ?? 0) }} កាក់<template v-if="!enoughCoins"> · ចុចដើម្បីទិញកាក់ ១០០ (${{ smallestPack }})</template>
+          </span>
+        </button>
+        <button type="button" class="option" @click="buy({ kind: 'SERIES', seriesId: movie.id }, `ដោះសោ “${movie.title}”`)">
+          <span class="o-head">
+            <strong>ដោះសោរឿងនេះទាំងមូល</strong>
             <span class="price">${{ prices.seriesUnlock }}</span>
           </span>
-          <span class="o-sub">គ្រប់វគ្គទាំង {{ kh(movie.episodes) }} នៃរឿងនេះ · បង់ម្តង</span>
+          <span class="o-sub">គ្រប់វគ្គទាំង {{ kh(movie.episodes) }} · បង់ម្តងតាម KHQR</span>
         </button>
+        <NuxtLink to="/vip" class="option">
+          <span class="o-head">
+            <strong>VIP គ្រប់រឿង</strong>
+            <span class="price">${{ planPrice(1) }}<small>/ខែ</small></span>
+          </span>
+          <span class="o-sub">ដោះសោរាល់រឿង VIP · Full HD</span>
+        </NuxtLink>
+        <p v-if="error" class="error" role="alert">{{ error }}</p>
+      </div>
+
+      <div v-else class="options">
+        <div class="khqr" role="status">
+          <p>ការបង់ប្រាក់មិនទាន់ដំណើរការសម្រាប់រឿងនេះនៅឡើយទេ។</p>
+          <button v-if="isDev" type="button" class="btn btn-primary" @click="simulateUnlock">សាកល្បងដោះសោ (dev)</button>
+        </div>
         <NuxtLink to="/vip" class="option">
           <span class="o-head">
             <strong>VIP គ្រប់រឿង</strong>
@@ -43,17 +130,12 @@ function simulateUnlock() {
         </NuxtLink>
       </div>
 
-      <div v-if="paying" class="khqr" role="status">
-        <p>ការបង់ប្រាក់តាម KHQR មិនទាន់ដំណើរការនៅឡើយទេ។</p>
-        <button v-if="isDev" type="button" class="btn btn-primary" @click="simulateUnlock">
-          សាកល្បងដោះសោ (dev)
-        </button>
-      </div>
-
       <NuxtLink :to="`/watch/${movie.id}/${movie.freeEpisodes}`" class="back">
         ត្រឡប់ទៅវគ្គ {{ kh(movie.freeEpisodes) }}
       </NuxtLink>
     </div>
+
+    <KhqrPay v-if="paying" :product="paying.product" :label="paying.label" @paid="onPaid" @close="paying = null" />
   </div>
 </template>
 
@@ -170,6 +252,34 @@ h2 {
 .khqr p {
   margin: 0;
   color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+}
+
+.option:disabled {
+  opacity: 0.6;
+}
+
+.price {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.signin {
+  min-height: 48px;
+  justify-content: center;
+  width: 100%;
+}
+
+.hint {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+}
+
+.error {
+  margin: 0;
+  color: #ff8a8a;
   font-size: 14px;
 }
 

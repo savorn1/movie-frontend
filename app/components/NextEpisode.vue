@@ -9,15 +9,9 @@ onBeforeUnmount(() => clearInterval(timer))
 
 const left = computed(() => props.at - now.value)
 
-// Khmer names written out: many browsers ship no Khmer date data and would show English
-const DAYS = ['អាទិត្យ', 'ច័ន្ទ', 'អង្គារ', 'ពុធ', 'ព្រហស្បតិ៍', 'សុក្រ', 'សៅរ៍']
-const MONTHS = ['មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា', 'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ']
-
 const when = computed(() => {
   const d = new Date(props.at)
-  const day = `ថ្ងៃ${DAYS[d.getDay()]} ទី${d.getDate()} ${MONTHS[d.getMonth()]}`
-  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  return kh(`${day} ម៉ោង ${time}`)
+  return `${khDay(d)} ម៉ោង ${khTime(d)}`
 })
 
 const countdown = computed(() => {

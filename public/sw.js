@@ -1,6 +1,7 @@
-/* RuengFlix service worker: offline page, cached app files, and recently visited pages.
-   Video, the API and subtitles always go to the network. Bump VERSION to drop old caches. */
-const VERSION = 'v2'
+/* RuengFlix service worker: offline page, cached app files, recently visited pages, and new-episode
+   notifications (Web Push). Video, the API and subtitles always go to the network. Bump VERSION to
+   drop old caches. */
+const VERSION = 'v3'
 const SHELL = `shell-${VERSION}`
 const ASSETS = `assets-${VERSION}`
 const PAGES = `pages-${VERSION}`
@@ -62,4 +63,40 @@ self.addEventListener('fetch', (event) => {
       }))
     )
   }
+})
+
+// ---------- New-episode notifications ----------
+
+self.addEventListener('push', (event) => {
+  let data = {}
+  try {
+    data = event.data ? event.data.json() : {}
+  } catch {
+    // Not ours
+  }
+  if (!data.title) return
+  event.waitUntil(self.registration.showNotification(data.title, {
+    body: data.body,
+    icon: data.icon || '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: data.tag,
+    lang: 'km',
+    data: { url: data.url || '/' }
+  }))
+})
+
+// Open the episode, reusing a RuengFlix tab when there is one
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const target = new URL(event.notification.data?.url || '/', self.location.origin)
+  if (target.origin !== self.location.origin) return
+  event.waitUntil((async () => {
+    const tabs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const tab = tabs.find(t => new URL(t.url).origin === target.origin)
+    if (tab) {
+      await tab.focus()
+      return tab.navigate(target.href)
+    }
+    return self.clients.openWindow(target.href)
+  })())
 })

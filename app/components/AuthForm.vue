@@ -1,9 +1,10 @@
 <script setup lang="ts">
-// Sign in or create an account with a Cambodian phone number and a password (/login, /register).
+// Sign in or create an account (/login, /register): Telegram or Google in one tap, or a Cambodian
+// phone number and a password.
 const props = defineProps<{ mode: 'login' | 'register' }>()
 
 const route = useRoute()
-const { login, register, enabled, known } = useViewer()
+const { login, register, enabled, known, methods } = useViewer()
 const { show } = useToast()
 
 const phone = ref('')
@@ -11,7 +12,9 @@ const password = ref('')
 const displayName = ref('')
 const showPassword = ref(false)
 const busy = ref(false)
-const error = ref('')
+// Google sends people back with ?error=CODE when something went wrong
+const error = ref(route.query.error ? accountErrorFromCode(route.query.error) : '')
+const hasProviders = computed(() => methods.value.telegram || methods.value.google)
 
 // Back to where they were, but only to a page on this site
 const next = computed(() => {
@@ -22,6 +25,11 @@ const otherLink = computed(() => ({
   path: props.mode === 'login' ? '/register' : '/login',
   query: route.query.next ? { next: route.query.next } : {}
 }))
+
+async function onProviderDone() {
+  show('បានចូលគណនី')
+  await navigateTo(next.value, { replace: true })
+}
 
 async function submit() {
   error.value = ''
@@ -61,6 +69,11 @@ async function submit() {
       </p>
 
       <p v-if="known && !enabled" class="error" role="alert">មិនទាន់អាចប្រើគណនីបាននៅឡើយទេ</p>
+
+      <template v-if="enabled && hasProviders">
+        <SignInButtons :next="next" @done="onProviderDone" @error="error = $event" />
+        <p class="or"><span>{{ mode === 'login' ? 'ឬចូលដោយលេខទូរស័ព្ទ' : 'ឬបង្កើតដោយលេខទូរស័ព្ទ' }}</span></p>
+      </template>
 
       <label v-if="mode === 'register'" class="field">
         <span>ឈ្មោះ</span>
@@ -109,6 +122,11 @@ async function submit() {
       <button type="submit" class="btn btn-primary submit" :disabled="busy || (known && !enabled)">
         {{ busy ? 'សូមរង់ចាំ…' : mode === 'login' ? 'ចូលគណនី' : 'បង្កើតគណនី' }}
       </button>
+
+      <details v-if="mode === 'login' && hasProviders" class="forgot">
+        <summary>ភ្លេចពាក្យសម្ងាត់?</summary>
+        <p>ចូលតាម Telegram ឬ Google ដែលបានភ្ជាប់ជាមួយគណនីរបស់អ្នក រួចកំណត់ពាក្យសម្ងាត់ថ្មីនៅទំព័រ “ខ្ញុំ”។</p>
+      </details>
 
       <p class="switch">
         <template v-if="mode === 'login'">មិនទាន់មានគណនី? </template>
@@ -207,6 +225,35 @@ h1 {
 .submit {
   min-height: 48px;
   justify-content: center;
+}
+
+.or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.or::before,
+.or::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
+.forgot {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.forgot summary {
+  cursor: pointer;
+}
+
+.forgot p {
+  margin: 6px 0 0;
 }
 
 .switch {

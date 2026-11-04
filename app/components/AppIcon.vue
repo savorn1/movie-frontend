@@ -38,7 +38,10 @@ const paths: Record<string, string> = {
   more: 'M5 10.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zM12 10.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zM19 10.4a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2z',
   flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
   pip: 'M3 5h18v14H3zM12 12h7v5h-7z',
-  skip: 'M5 5v14l9-7zM16 5v14'
+  skip: 'M5 5v14l9-7zM16 5v14',
+  calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  coin: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v10M9.5 9.5c0-1 1-1.5 2.5-1.5s2.5.6 2.5 1.7c0 2.3-5 1.3-5 3.6 0 1.1 1 1.7 2.5 1.7s2.5-.5 2.5-1.5',
+  comment: 'M4 5h16v11H9l-5 4z'
 }
 
 // Some glyphs are always filled; closed shapes also fill when `solid` marks the active state.

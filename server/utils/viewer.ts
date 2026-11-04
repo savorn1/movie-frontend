@@ -1,7 +1,8 @@
 import type { H3Event } from 'h3'
 
 /*
- * Viewer accounts: phone number + password, stored in VideoLingo's database through movie-api.
+ * Viewer accounts: phone number + password, Telegram or Google, stored in VideoLingo's database
+ * through movie-api.
  * The signed-in viewer is kept in an encrypted, HTTP-only cookie (NUXT_SESSION_SECRET) holding their
  * id and the session version they signed in with; movie-api raises that version to sign them out
  * everywhere (password change, or disabled in the admin portal).
@@ -9,8 +10,14 @@ import type { H3Event } from 'h3'
 
 export interface Viewer {
   id: number
-  /** "012 345 678" */
-  phone: string
+  /** "012 345 678"; null for accounts made with Telegram or Google */
+  phone: string | null
+  hasPassword: boolean
+  /** Telegram user id, which is also the bot's chat id for this viewer */
+  telegramId: number | null
+  telegramUsername: string | null
+  googleEmail: string | null
+  photoUrl: string | null
   displayName: string
   disabled: boolean
   sessionVersion: number
@@ -20,7 +27,12 @@ export interface Viewer {
 interface ViewerSessionData {
   viewerId?: number
   version?: number
+  /** When this session signed in with Telegram or Google: allows "forgot password" for a while */
+  providerAt?: number
 }
+
+/** How long after signing in with Telegram or Google the password can be reset without the old one */
+export const RESET_WINDOW_MS = 15 * 60_000
 
 /** Accounts need movie-api and a NUXT_SESSION_SECRET of at least 32 characters */
 export function viewerAccountsEnabled(event: H3Event) {
@@ -48,7 +60,7 @@ export function requireAccounts(event: H3Event) {
  * through (401 WRONG_LOGIN, 409 PHONE_TAKEN…), so pages can say what went wrong; only an unreachable
  * movie-api becomes a 502.
  */
-export async function viewerApi<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: object): Promise<T> {
+export async function viewerApi<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: object): Promise<T> {
   try {
     return (await $fetch(`${movieApiBase()}/viewers${path}`, { method, body, headers: authHeaders(), timeout: 8000 })) as T
   } catch (err) {
@@ -62,9 +74,65 @@ export async function viewerApi<T>(method: 'GET' | 'POST' | 'PUT', path: string,
   }
 }
 
-export async function signIn(event: H3Event, viewer: Viewer) {
+/** What the browser gets: no Telegram id, no session version */
+export function clientViewer(v: Viewer) {
+  return {
+    id: v.id,
+    displayName: v.displayName,
+    phone: v.phone,
+    hasPassword: v.hasPassword,
+    telegram: v.telegramId != null ? { username: v.telegramUsername } : null,
+    google: v.googleEmail != null ? { email: v.googleEmail } : null,
+    photoUrl: v.photoUrl,
+    createdAt: v.createdAt
+  }
+}
+
+/** Which sign-in buttons work on this server */
+export function signInMethods(event: H3Event) {
+  const c = useRuntimeConfig(event)
+  return {
+    telegram: !!c.telegramBotToken && !!c.public.telegramBot,
+    google: !!c.googleClientId && !!c.googleClientSecret
+  }
+}
+
+/** Sign in with a Telegram or Google account already verified here; `linkTo` adds it to that account */
+export function viewerIdentity(identity: {
+  provider: 'telegram' | 'google'
+  subject: string
+  displayName: string
+  username?: string | null
+  email?: string | null
+  photoUrl?: string | null
+  linkTo?: number
+}) {
+  const body = Object.fromEntries(Object.entries(identity).filter(([, v]) => v != null && v !== ''))
+  return viewerApi<Viewer>('POST', '/identity', body)
+}
+
+/** `viaProvider`: the viewer just proved who they are with Telegram or Google */
+export async function signIn(event: H3Event, viewer: Viewer, viaProvider = false) {
   const session = await viewerSession(event)
-  await session.update({ viewerId: viewer.id, version: viewer.sessionVersion })
+  await session.update({ viewerId: viewer.id, version: viewer.sessionVersion, providerAt: viaProvider ? Date.now() : undefined })
+}
+
+/** Whether this session may set a new password without the old one ("forgot password") */
+export async function mayResetPassword(event: H3Event, viewer: Viewer) {
+  const { providerAt } = (await viewerSession(event)).data
+  return viewer.hasPassword && !!providerAt && Date.now() - providerAt < RESET_WINDOW_MS
+}
+
+// Once a day per viewer is enough for retention; kept per server process
+const activeOn = new Map<number, string>()
+
+/** Tell movie-api the viewer used the site today (in the background, at most once a day) */
+export function markActive(viewer: Viewer) {
+  const today = new Date().toISOString().slice(0, 10)
+  if (activeOn.get(viewer.id) === today) return
+  activeOn.set(viewer.id, today)
+  if (activeOn.size > 50_000) activeOn.clear()
+  viewerApi('POST', `/${viewer.id}/active`).catch(() => activeOn.delete(viewer.id))
 }
 
 /** The signed-in viewer, or null; a disabled account or an outdated session is signed out here */

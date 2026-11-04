@@ -6,6 +6,7 @@ usePageMeta({})
 const { continueWatching } = useLibrary()
 const top10 = computed(() => hotNow.value.slice(0, 10))
 const forYou = useForYou()
+const becauseYouWatched = useBecauseYouWatched()
 
 // Swipeable rows keep Home short; the full grids live on Browse, pre-filtered by "See all"
 const sections = computed(() => [
@@ -37,6 +38,13 @@ const sections = computed(() => [
             :entry="entry"
           />
         </MovieRow>
+        <MovieRow
+          v-if="becauseYouWatched"
+          :title="`ព្រោះអ្នកបានមើល “${becauseYouWatched.source.title}”`"
+          :items="becauseYouWatched.items"
+          small
+          :col="[168, 124]"
+        />
         <MovieRow
           v-if="forYou"
           :title="`ព្រោះអ្នកចូលចិត្តរឿង${forYou.label}`"

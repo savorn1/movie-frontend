@@ -14,7 +14,8 @@ const items: NavItem[] = [
   { to: '/', label: 'ទំព័រដើម', icon: 'home' },
   { to: '/shorts', label: 'ខ្លីៗ', icon: 'shorts' },
   { to: '/browse', label: 'រុករករឿង', icon: 'compass' },
-  { to: '/hot', label: 'ចំណាត់ថ្នាក់', icon: 'ranking', divider: true },
+  { to: '/hot', label: 'ចំណាត់ថ្នាក់', icon: 'ranking' },
+  { to: '/schedule', label: 'កាលវិភាគ', icon: 'calendar', divider: true },
   { to: '/library', label: 'ប្រវត្តិ & ចំណូលចិត្ត', icon: 'heart', newBadge: true },
   { to: '/vip', label: 'VIP', icon: 'crown', vip: true }
 ]

@@ -38,7 +38,10 @@ export interface ApiEpisode {
   title: string | null
   durationSeconds: number | null
   thumbnailUrl: string | null
+  /** This viewer can't watch it (a VIP episode they haven't paid for) */
   locked: boolean
+  /** A VIP episode, paid for or not */
+  premium: boolean
   /** Signed link; null for locked VIP episodes */
   videoUrl: string | null
   /** Path on movie-api; null when locked or without published subtitles */
@@ -139,20 +142,34 @@ export async function apiSeriesList() {
 }
 
 /** Episodes of one series (null when it isn't listed) */
-export async function apiEpisodes(seriesId: number) {
-  return (await apiGet<ApiDetail>(`/series/${seriesId}`))?.episodes ?? null
+/**
+ * Episodes of one series (null when it isn't listed). With a signed-in viewer, the VIP episodes they
+ * paid for come with links; that answer is theirs alone, so it isn't cached.
+ */
+export async function apiEpisodes(seriesId: number, viewerId?: number) {
+  if (!viewerId) return (await apiGet<ApiDetail>(`/series/${seriesId}`))?.episodes ?? null
+  try {
+    return (await apiCall<ApiDetail>('GET', `/series/${seriesId}?viewer=${viewerId}`)).episodes
+  } catch (err) {
+    if ((err as { statusCode?: number }).statusCode === 404) return null
+    throw err
+  }
 }
 
 /** WebVTT for one episode, passed through this server (movie-api is never called from browsers) */
-export async function apiSubtitles(seriesId: number, ep: number) {
-  const episode = (await apiEpisodes(seriesId))?.find(e => e.number === ep)
+export async function apiSubtitles(seriesId: number, ep: number, viewerId?: number) {
+  const episode = (await apiEpisodes(seriesId, viewerId))?.find(e => e.number === ep)
   if (!episode?.subtitlesUrl) return null
+  const viewer = viewerId ? `?viewer=${viewerId}` : ''
   try {
-    return await $fetch<string>(`${movieApiBase()}${episode.subtitlesUrl}`, { headers: authHeaders(), responseType: 'text', timeout: 5000 })
+    return await $fetch<string>(`${movieApiBase()}${episode.subtitlesUrl}${viewer}`, { headers: authHeaders(), responseType: 'text', timeout: 5000 })
   } catch {
     return null
   }
 }
+
+/** A movie-api GET shared by every visitor (schedule, suggestions), cached for 30 seconds */
+export const apiCached = <T>(path: string) => apiGet<T>(path)
 
 /*
  * Viewer data endpoints (votes, plays, reports, follows, alerts), never cached.

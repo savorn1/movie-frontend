@@ -50,10 +50,15 @@ async function alertNewEpisodes(list: Movie[]) {
   checking = (async () => {
     const fresh = movieApiEnabled() ? await claimRemote(list) : await claimLocal(list)
     for (const m of fresh) console.info(`[alerts] ${m.title} (#${m.id}): episode ${m.episodes} is out`)
-    if (!fresh.length || !useRuntimeConfig().telegramBotToken) return
-    // Don't hold up the page: send in the background
+    if (!fresh.length) return
+    // Don't hold up the page: send in the background, to Telegram and to browsers
     for (const m of fresh) {
-      notifyNewEpisode(m, m.episodes).catch(err => console.warn(`[alerts] ${m.title}:`, (err as Error).message))
+      if (useRuntimeConfig().telegramBotToken) {
+        notifyNewEpisode(m, m.episodes).catch(err => console.warn(`[alerts] ${m.title}:`, (err as Error).message))
+      }
+      pushNewEpisode(m, m.episodes)
+        .then(r => r.sent + r.removed + r.failed && console.info(`[push] ${m.title}: ${r.sent} sent, ${r.removed} gone, ${r.failed} failed`))
+        .catch(err => console.warn(`[push] ${m.title}:`, (err as Error).message))
     }
   })()
   try {

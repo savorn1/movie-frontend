@@ -9,5 +9,5 @@ export default defineEventHandler(async (event) => {
   }
   const viewer = await viewerApi<Viewer>('POST', '/login', { phone: body.phone, password: body.password })
   await signIn(event, viewer)
-  return { viewer }
+  return { viewer: clientViewer(viewer) }
 })

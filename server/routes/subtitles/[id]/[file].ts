@@ -14,11 +14,13 @@ export default defineEventHandler(async (event) => {
   const ep = Number(getRouterParam(event, 'file')?.replace(/\.vtt$/, ''))
 
   // movie-api series: pass its published subtitles through (404 when it has none or the episode is locked)
+  // (and, for a signed-in viewer, the VIP episodes they paid for)
   if (movieApiEnabled()) {
-    const vtt = await apiSubtitles(id, ep)
+    const viewer = await currentViewer(event)
+    const vtt = await apiSubtitles(id, ep, viewer?.id)
     if (!vtt) throw createError({ statusCode: 404 })
     setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')
-    setHeader(event, 'Cache-Control', 'public, max-age=300')
+    setHeader(event, 'Cache-Control', viewer ? 'private, max-age=300' : 'public, max-age=300')
     return vtt
   }
 

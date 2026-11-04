@@ -22,6 +22,15 @@ export async function addFollow(seriesId: number, chatId: number) {
   if (!series.includes(seriesId)) await store().setItem(`chat:${chatId}`, [...series, seriesId])
 }
 
+export async function removeFollow(seriesId: number, chatId: number) {
+  if (movieApiEnabled()) {
+    await apiCall('DELETE', `/follows/${seriesId}/${chatId}`)
+    return
+  }
+  await store().setItem(`series:${seriesId}`, (await getList(`series:${seriesId}`)).filter(c => c !== chatId))
+  await store().setItem(`chat:${chatId}`, (await getList(`chat:${chatId}`)).filter(s => s !== seriesId))
+}
+
 /** Remove a chat from everything it follows; returns the series ids it was following */
 export async function removeChat(chatId: number): Promise<number[]> {
   if (movieApiEnabled()) return apiCall<number[]>('DELETE', `/chats/${chatId}/follows`)

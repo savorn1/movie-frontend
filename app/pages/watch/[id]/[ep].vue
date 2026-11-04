@@ -10,17 +10,24 @@ if (!movie.value || !Number.isInteger(ep.value) || ep.value < 1 || ep.value > mo
   throw createError({ statusCode: 404, message: 'រកមិនឃើញវគ្គនេះទេ' })
 }
 
-// VideoLingo series load their episode links per series (none for locked VIP episodes)
-interface RemoteEpisode { number: number; videoUrl: string | null; hasSubtitles: boolean }
-const { data: remoteEpisodes, status: episodesStatus, refresh: retryEpisodes } = useFetch<RemoteEpisode[]>(
-  () => `/api/series/${movie.value!.id}/episodes`,
-  { server: false, immediate: !!movie.value?.remote, default: () => [] }
+// movie-api series load their episode links per series and per viewer (none for VIP episodes they
+// haven't paid for); signing in or out asks again
+const { reload, episodesOf } = useSeriesEpisodes()
+const { viewer } = useViewer()
+const { status: episodesStatus, refresh: retryEpisodes } = useAsyncData(
+  () => `episodes-${movie.value!.id}`,
+  () => reload(movie.value!.id),
+  { server: false, immediate: !!movie.value?.remote }
 )
+watch(() => viewer.value?.id, () => {
+  if (movie.value?.remote) retryEpisodes()
+})
 const playable = computed(() => {
   const m = movie.value!
   if (!m.remote) return m
-  const sources = Object.fromEntries(remoteEpisodes.value.filter(e => e.videoUrl).map(e => [e.number, e.videoUrl!]))
-  const subtitled = Object.fromEntries(remoteEpisodes.value.map(e => [e.number, e.hasSubtitles]))
+  const episodes = episodesOf(m.id) ?? []
+  const sources = Object.fromEntries(episodes.filter(e => e.videoUrl).map(e => [e.number, e.videoUrl!]))
+  const subtitled = Object.fromEntries(episodes.map(e => [e.number, e.hasSubtitles]))
   return { ...m, sources, subtitled }
 })
 const playerReady = computed(() => !movie.value!.remote || episodesStatus.value === 'success')
@@ -87,6 +94,10 @@ usePageMeta(() => ({
             <dt>F</dt><dd>ពេញអេក្រង់</dd>
           </dl>
         </details>
+
+        <ClientOnly>
+          <EpisodeComments v-if="movie.remote" :series-id="movie.id" :ep="ep" />
+        </ClientOnly>
       </div>
 
       <aside class="side">

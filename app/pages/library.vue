@@ -59,6 +59,10 @@ function clearHistory() {
 
     <AccountPanel />
 
+    <ClientOnly>
+      <WalletPanel />
+    </ClientOnly>
+
     <section class="appearance">
       <div class="head">
         <h2>រូបរាង</h2>

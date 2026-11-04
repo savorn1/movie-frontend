@@ -97,8 +97,13 @@ export function useLibrary() {
 
   const totalNew = computed(() => following.value.reduce((n, id) => n + newEpisodes(id), 0))
 
-  /** Free episodes, or VIP episodes of a series this viewer unlocked */
-  const canWatch = (m: Movie, ep: number) => !isLocked(m, ep) || unlocked.value.includes(m.id)
+  /**
+   * Free episodes, or VIP episodes this viewer paid for. For movie-api series only the server's answer
+   * counts (useSeriesEpisodes); the sample series use this browser's unlock list.
+   */
+  const { isOpen } = useSeriesEpisodes()
+  const canWatch = (m: Movie, ep: number) =>
+    !isLocked(m, ep) || (m.remote ? isOpen(m.id, ep) : unlocked.value.includes(m.id))
   function unlockSeries(id: number) {
     if (!unlocked.value.includes(id)) unlocked.value = [...unlocked.value, id]
   }

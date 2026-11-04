@@ -32,10 +32,20 @@ export default defineNuxtConfig({
     // /admin: NUXT_ADMIN_PASSWORD, NUXT_SESSION_SECRET (32+ characters)
     adminPassword: '',
     sessionSecret: '',
+    // "Continue with Google" (NUXT_GOOGLE_CLIENT_ID, NUXT_GOOGLE_CLIENT_SECRET): an OAuth web client whose
+    // authorized redirect URI is <siteUrl>/api/auth/google/callback. The token URL is overridable for tests.
+    googleClientId: '',
+    googleClientSecret: '',
+    googleTokenUrl: 'https://oauth2.googleapis.com/token',
+    // Browser push (npx web-push generate-vapid-keys): NUXT_VAPID_PRIVATE_KEY, NUXT_VAPID_SUBJECT (mailto:…),
+    // and NUXT_PUBLIC_VAPID_PUBLIC_KEY below
+    vapidPrivateKey: '',
+    vapidSubject: '',
     // Telegram chat that receives viewer problem reports (NUXT_TELEGRAM_ADMIN_CHAT)
     telegramAdminChat: '',
     public: {
       telegramBot: '',
+      vapidPublicKey: '',
       // videolingo-web admin URL, linked from /admin (NUXT_PUBLIC_VIDEOLINGO_ADMIN_URL)
       videolingoAdminUrl: '',
       siteUrl: 'http://localhost:3010'

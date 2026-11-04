@@ -68,6 +68,12 @@ export const SERIES_UNLOCK_PRICE = 0.49
 export interface SitePrices {
   seriesUnlock: number
   vipPlans: { months: 1 | 3 | 6 | 12; price: number }[]
+  /** Coin packs sold with KHQR */
+  coinPacks: { coins: 100 | 300 | 1000; price: number }[]
+  /** Coins to unlock one VIP episode */
+  episodeCoins: number
+  /** Coins for the daily check-in (every 7th day in a row pays double) */
+  checkInCoins: number
 }
 
 export const DEFAULT_PRICES: SitePrices = {
@@ -77,7 +83,14 @@ export const DEFAULT_PRICES: SitePrices = {
     { months: 3, price: 4.99 },
     { months: 6, price: 8.99 },
     { months: 12, price: 14.99 }
-  ]
+  ],
+  coinPacks: [
+    { coins: 100, price: 0.99 },
+    { coins: 300, price: 2.49 },
+    { coins: 1000, price: 6.99 }
+  ],
+  episodeCoins: 20,
+  checkInCoins: 5
 }
 
 /** Hero slider: the series ranked in videolingo-web in rank order, else the first `count` */

@@ -87,6 +87,25 @@ How it behaves:
 - **Time zones:** VideoLingo stores local times. movie-api converts them (`DB_TIME_ZONE`) and sends real UTC instants.
 - **Existing data:** data already in `.data` is not copied over.
 
+**Managed from the admin portal:** prices (`/api/site`, used by the VIP page and unlock wall), the home hero order (`featuredRank`), sending an alert now (`POST /api/notify`, logged as MANUAL) and refreshing the catalog (`POST /api/refresh`). Both POSTs need `Authorization: Bearer NUXT_NOTIFY_SECRET`, which VideoLingo sends as `RUENGFLIX_NOTIFY_SECRET`. Every alert sent is logged to movie-api for the admin portal's alert history.
+
+**Viewer accounts:** with movie-api and `NUXT_SESSION_SECRET` set, viewers can register and sign in with a Cambodian phone number and a password (`/register`, `/login`, the header's ចូលគណនី button, or the Me page). Their library (saved and followed series, history, unlocks, votes) syncs to the account (`app/plugins/sync.client.ts`, merge rules in `shared/data/librarySync.ts`). Server routes: `/api/auth/{me,login,register,logout,password}` and `GET`/`PUT /api/library`. See movie-api's docs.md › Viewer accounts.
+
+**Telegram and Google sign-in:** the login and register pages also offer **Telegram** and **Google**. An account is created on first use. On the Me page, a signed-in viewer can add either one to their account. Each button appears only when that provider is set up:
+
+```bash
+# Telegram: the same bot as the alerts (NUXT_TELEGRAM_BOT_TOKEN, NUXT_PUBLIC_TELEGRAM_BOT).
+# In @BotFather, /setdomain to the site's domain; the widget doesn't work on localhost.
+NUXT_GOOGLE_CLIENT_ID=<OAuth web client id>
+NUXT_GOOGLE_CLIENT_SECRET=<its secret>
+# In Google Cloud, add <NUXT_PUBLIC_SITE_URL>/api/auth/google/callback as an authorized redirect URI.
+```
+
+How it works:
+- **Telegram:** Telegram's Login Widget asks the viewer to confirm and to let the bot message them. RuengFlix checks the signed result (`POST /api/auth/telegram`, JSON only). It rejects data older than an hour.
+- **Google:** a redirect flow with state and PKCE (`/api/auth/google` → Google → `/api/auth/google/callback`). Problems come back as `/login?error=CODE`.
+- **Telegram alerts:** for a viewer with Telegram on their account, **Follow** turns on alerts for their own chat directly (`POST`/`DELETE /api/follows/<id>`); there is no bot deep link. Series they followed before adding Telegram get alerts after the next sign-in (`POST /api/follows`). Everyone else keeps the deep-link Follow.
+
 **Without `NUXT_MOVIE_API_BASE`**, RuengFlix uses the built-in sample series, with viewer data in `.data` on this server. This is useful for local development and the browser tests.
 
 ## Admin dashboard (`/admin`)

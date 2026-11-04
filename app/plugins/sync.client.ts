@@ -4,7 +4,8 @@ import { cleanLibrary, mergeLibraries, type SyncedLibrary } from '#shared/data/l
  * Keeps the library in step with the viewer's account. Runs after library.client (plugins load in
  * file-name order), so this device's saved library is already in place. On sign-in the device's
  * copy and the account's are merged once; after that every change is saved to the account, a
- * couple of seconds after it happens.
+ * couple of seconds after it happens. An account with Telegram then gets Telegram alerts for every
+ * series it follows, including ones followed before Telegram was added.
  */
 export default defineNuxtPlugin((nuxtApp) => {
   const { viewer, refreshViewer } = useViewer()
@@ -56,11 +57,25 @@ export default defineNuxtPlugin((nuxtApp) => {
       await nextTick()
       applying = false
       await push()
+      await alertsForFollowed()
     } catch {
       applying = false
       // Try again on the next sign-in or page load
     }
   }
+
+  async function alertsForFollowed() {
+    if (!viewer.value?.telegram || !following.value.length) return
+    await $fetch('/api/follows', { method: 'POST', body: { seriesIds: following.value } }).catch(() => {})
+  }
+
+  // Telegram added to the account on the Me page: alerts for what they already follow
+  watch(
+    () => !!viewer.value?.telegram,
+    (linked, before) => {
+      if (linked && before === false && syncedFor != null) alertsForFollowed()
+    }
+  )
 
   watch(
     () => viewer.value?.id ?? null,

@@ -38,9 +38,28 @@ const perMonth = (p: Plan) => +(p.price / p.months).toFixed(2)
 const dialog = ref<HTMLDialogElement>()
 const selected = ref<Plan | null>(null)
 
-function choose(p: Plan) {
+const { viewer, enabled: accountsOn } = useViewer()
+const { refresh: refreshWallet } = useWallet()
+const { show } = useToast()
+const buying = ref<Plan | null>(null)
+
+// With accounts on, plans are bought with KHQR and added to the account; signed-out viewers sign in
+// first. Without accounts (sample setup) the dialog explains payments aren't available.
+async function choose(p: Plan) {
+  if (accountsOn.value) {
+    if (!viewer.value) return navigateTo({ path: '/login', query: { next: '/vip' } })
+    buying.value = p
+    return
+  }
   selected.value = p
   dialog.value?.showModal()
+}
+
+async function onPaid() {
+  const plan = buying.value
+  buying.value = null
+  await refreshWallet()
+  show(`អ្នកជាសមាជិក ${plan?.name ?? 'VIP'} ហើយ · រីករាយទស្សនា!`)
 }
 
 const close = () => dialog.value?.close()
@@ -80,6 +99,14 @@ const close = () => dialog.value?.close()
         <p>{{ f.text }}</p>
       </div>
     </section>
+
+    <KhqrPay
+      v-if="buying"
+      :product="{ kind: 'VIP', months: buying.months }"
+      :label="buying.name"
+      @paid="onPaid"
+      @close="buying = null"
+    />
 
     <dialog ref="dialog" class="dialog" aria-labelledby="checkout-title" @click.self="close">
       <div v-if="selected" class="dialog-body">
