@@ -10,6 +10,21 @@ if (!movie.value || !Number.isInteger(ep.value) || ep.value < 1 || ep.value > mo
   throw createError({ statusCode: 404, message: 'រកមិនឃើញវគ្គនេះទេ' })
 }
 
+// VideoLingo series load their episode links per series (none for locked VIP episodes)
+interface RemoteEpisode { number: number; videoUrl: string | null; hasSubtitles: boolean }
+const { data: remoteEpisodes, status: episodesStatus, refresh: retryEpisodes } = useFetch<RemoteEpisode[]>(
+  () => `/api/series/${movie.value!.id}/episodes`,
+  { server: false, immediate: !!movie.value?.remote, default: () => [] }
+)
+const playable = computed(() => {
+  const m = movie.value!
+  if (!m.remote) return m
+  const sources = Object.fromEntries(remoteEpisodes.value.filter(e => e.videoUrl).map(e => [e.number, e.videoUrl!]))
+  const subtitled = Object.fromEntries(remoteEpisodes.value.map(e => [e.number, e.hasSubtitles]))
+  return { ...m, sources, subtitled }
+})
+const playerReady = computed(() => !movie.value!.remote || episodesStatus.value === 'success')
+
 const { canWatch } = useLibrary()
 const { share } = useShare()
 const ambient = useAmbientColor(() => movie.value?.poster)
@@ -35,7 +50,12 @@ usePageMeta(() => ({
     <div class="layout">
       <div class="main-col">
         <ClientOnly>
-          <BingePlayer :movie="movie" :ep="ep" />
+          <BingePlayer v-if="playerReady" :movie="playable" :ep="ep" />
+          <div v-else-if="episodesStatus === 'error'" class="player-skeleton load-error" role="alert">
+            <p>មិនអាចផ្ទុកវគ្គនេះបានទេ។</p>
+            <button type="button" class="btn btn-primary" @click="retryEpisodes()">ព្យាយាមម្តងទៀត</button>
+          </div>
+          <div v-else class="player-skeleton" :style="{ backgroundImage: `url(${movie.banner})` }" />
           <template #fallback>
             <div class="player-skeleton" :style="{ backgroundImage: `url(${movie.banner})` }" />
           </template>
@@ -113,6 +133,20 @@ usePageMeta(() => ({
   gap: 28px;
   align-items: start;
   margin-bottom: 32px;
+}
+
+.load-error {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  background: #111;
+  color: #fff;
+  opacity: 1;
+}
+
+.load-error p {
+  margin: 0;
 }
 
 .player-skeleton {

@@ -30,6 +30,12 @@ export interface Movie {
   sources?: Record<number, string>
   /** Last time an episode was published (ms); orders "Latest updates" */
   updatedAt: number
+  /** When the next scheduled episode comes out (ms), for the countdown; null/absent when none is scheduled */
+  nextEpisodeAt?: number | null
+  /** Comes from VideoLingo: episode links are loaded per series and never fall back to sample clips */
+  remote?: boolean
+  /** VideoLingo series: which episodes have published subtitles (others get no track request) */
+  subtitled?: Record<number, boolean>
 }
 
 /*
@@ -219,13 +225,16 @@ const sampleHls = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
 
 export function episodeSource(m: Movie, ep: number): EpisodeSource {
   const published = m.sources?.[ep]
-  const src = published ?? (ep % 5 === 0 ? sampleHls : sampleClips[(m.id + ep) % sampleClips.length]!)
+  // A VideoLingo series only ever plays its own links (none for a locked episode)
+  const sample = m.remote ? '' : ep % 5 === 0 ? sampleHls : sampleClips[(m.id + ep) % sampleClips.length]!
+  const src = published ?? sample
   return {
     src,
     type: /\.m3u8(\?|$)/i.test(src) ? 'hls' : 'mp4',
-    subtitles: `/subtitles/${m.id}/${ep}.vtt`
+    subtitles: m.remote && !m.subtitled?.[ep] ? '' : `/subtitles/${m.id}/${ep}.vtt`
   }
 }
 
 /** Link-preview image (Open Graph's recommended 1200×630) for a series */
-export const shareImage = (m: Movie) => `https://picsum.photos/seed/ruengflix-banner-${m.id}/1200/630`
+export const shareImage = (m: Movie) =>
+  m.remote ? m.banner : `https://picsum.photos/seed/ruengflix-banner-${m.id}/1200/630`

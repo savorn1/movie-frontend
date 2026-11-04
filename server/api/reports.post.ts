@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto'
-
 /*
  * "Report a problem" from the player. Stored for /admin and, when NUXT_TELEGRAM_ADMIN_CHAT is
  * set, sent to that Telegram chat so broken episodes get noticed quickly.
@@ -15,17 +13,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Expected { seriesId, ep, reason, note?, time? }' })
   }
 
-  const report: ProblemReport = {
-    id: randomUUID(),
+  const report = await addReport({
     seriesId: movie.id,
     ep,
     reason,
     note: String(body?.note ?? '').trim().slice(0, 300),
-    time: Math.max(0, Math.floor(Number(body?.time) || 0)),
-    at: Date.now(),
-    resolved: false
-  }
-  await saveReports([report, ...(await getReports())])
+    time: Math.max(0, Math.floor(Number(body?.time) || 0))
+  })
 
   const { telegramBotToken, telegramAdminChat, public: pub } = useRuntimeConfig(event)
   if (telegramBotToken && telegramAdminChat) {

@@ -2,6 +2,7 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },
+  devServer: { port: 3010 },
   modules: ['@nuxt/fonts'],
   css: ['~/assets/css/main.css'],
   // Self-hosted from Google Fonts at build time, with metric-matched fallbacks to avoid layout shift.
@@ -23,6 +24,11 @@ export default defineNuxtConfig({
     telegramBotToken: '',
     telegramWebhookSecret: '',
     notifySecret: '',
+    // movie-api (the Nest backend on VideoLingo's database): NUXT_MOVIE_API_BASE and NUXT_MOVIE_API_TOKEN.
+    // Set: series, episodes, ratings, plays, reports and Telegram follows come from it.
+    // Unset: the sample series, with viewer data in .data on this server.
+    movieApiBase: '',
+    movieApiToken: '',
     // /admin: NUXT_ADMIN_PASSWORD, NUXT_SESSION_SECRET (32+ characters)
     adminPassword: '',
     sessionSecret: '',
@@ -30,7 +36,9 @@ export default defineNuxtConfig({
     telegramAdminChat: '',
     public: {
       telegramBot: '',
-      siteUrl: 'http://localhost:3000'
+      // videolingo-web admin URL, linked from /admin (NUXT_PUBLIC_VIDEOLINGO_ADMIN_URL)
+      videolingoAdminUrl: '',
+      siteUrl: 'http://localhost:3010'
     }
   },
   // Who follows which series (Telegram chat ids). Swap the fs driver for Redis/KV in production.

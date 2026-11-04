@@ -1,8 +1,3 @@
-interface Totals {
-  up: number
-  down: number
-}
-
 /*
  * Record a 👍/👎 for one episode. The client sends its previous vote so a changed or
  * cleared vote moves the totals instead of adding to them.
@@ -22,16 +17,5 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Expected { seriesId, ep, vote: 1 | -1 | 0, previous? }' })
   }
 
-  const store = useStorage('ratings')
-  const key = `series:${movie.id}`
-  const all = (await store.getItem<Record<string, Totals>>(key)) ?? {}
-  const t = all[ep] ?? { up: 0, down: 0 }
-  if (previous === 1) t.up = Math.max(0, t.up - 1)
-  if (previous === -1) t.down = Math.max(0, t.down - 1)
-  if (vote === 1) t.up++
-  if (vote === -1) t.down++
-  all[ep] = t
-  await store.setItem(key, all)
-
-  return t
+  return castVote(movie.id, ep, vote, previous)
 })

@@ -97,6 +97,10 @@ useHead({
           <ActionButton icon="share" label="ចែករំលែក" @click="share(movie.title, `/detail/${movie.id}`)" />
         </div>
 
+        <ClientOnly>
+          <NextEpisode v-if="movie.nextEpisodeAt" :at="movie.nextEpisodeAt" :episode="movie.episodes + 1" />
+        </ClientOnly>
+
         <p v-if="movie.vip" class="vip-note">
           វគ្គ ១–{{ kh(movie.freeEpisodes) }} មើលដោយឥតគិតថ្លៃ។ វគ្គបន្ទាប់ត្រូវការ
           <NuxtLink to="/vip">សមាជិក VIP</NuxtLink>។

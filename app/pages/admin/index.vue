@@ -35,14 +35,16 @@ watch(admin, (v) => {
   if (!v && me.value?.admin) refresh()
 })
 
+// Series and episodes are managed in VideoLingo; this panel keeps the viewer-side data only it collects
+const videolingoAdmin = useRuntimeConfig().public.videolingoAdminUrl as string
+
 const tabs = [
-  { key: 'series', label: 'រឿង' },
   { key: 'insights', label: 'ការយល់ដឹង' },
   { key: 'reports', label: 'របាយការណ៍' }
 ] as const
 type Tab = (typeof tabs)[number]['key']
-const tab = computed<Tab>(() => (tabs.some(t => t.key === route.query.tab) ? route.query.tab as Tab : 'series'))
-const setTab = (t: Tab) => router.replace({ query: { ...route.query, tab: t === 'series' ? undefined : t } })
+const tab = computed<Tab>(() => (tabs.some(t => t.key === route.query.tab) ? route.query.tab as Tab : 'insights'))
+const setTab = (t: Tab) => router.replace({ query: { ...route.query, tab: t === 'insights' ? undefined : t } })
 </script>
 
 <template>
@@ -77,6 +79,17 @@ NUXT_SESSION_SECRET=&lt;32+ random characters&gt;</pre>
 
     <!-- Dashboard -->
     <template v-else>
+      <section class="panel content-note">
+        <div>
+          <strong>រឿង និងវគ្គ គ្រប់គ្រងនៅក្នុង VideoLingo</strong>
+          <p>Add series, upload and schedule episodes, and set VIP in the VideoLingo admin: a Public collection with
+            “Show on RuengFlix” on is a series. New episodes appear here within a minute.</p>
+        </div>
+        <a v-if="videolingoAdmin" :href="`${videolingoAdmin.replace(/\/$/, '')}/collections`" class="btn btn-primary" target="_blank" rel="noopener">
+          បើក VideoLingo
+        </a>
+      </section>
+
       <div class="tabs" role="tablist" aria-label="Admin">
         <button
           v-for="t in tabs"
@@ -89,8 +102,7 @@ NUXT_SESSION_SECRET=&lt;32+ random characters&gt;</pre>
           {{ t.label }}
         </button>
       </div>
-      <AdminSeriesTab v-if="tab === 'series'" />
-      <AdminInsightsTab v-else-if="tab === 'insights'" />
+      <AdminInsightsTab v-if="tab === 'insights'" />
       <AdminReportsTab v-else />
     </template>
   </div>
@@ -152,6 +164,26 @@ pre {
 
 :root[data-theme='light'] .error {
   color: #c40014;
+}
+
+.content-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-bottom: 20px;
+}
+
+.content-note strong {
+  color: var(--text-strong);
+}
+
+.content-note p {
+  max-width: 640px;
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
 }
 
 .tabs {

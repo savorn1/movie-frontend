@@ -12,12 +12,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Expected { seriesId, ep, kind: "start" | "complete" }' })
   }
 
-  const all = await getInsights(movie.id)
-  const s = all[ep] ?? { starts: 0, completes: 0 }
-  if (body!.kind === 'start') s.starts++
-  else s.completes++
-  all[ep] = s
-  await useStorage('insights').setItem(insightsKey(movie.id), all)
+  await recordPlay(movie.id, ep, body!.kind as 'start' | 'complete')
   setResponseStatus(event, 204)
   return null
 })

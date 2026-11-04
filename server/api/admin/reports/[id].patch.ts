@@ -5,10 +5,7 @@ export default defineEventHandler(async (event) => {
   const { resolved } = await readBody<{ resolved?: boolean }>(event)
   if (typeof resolved !== 'boolean') throw createError({ statusCode: 400, message: 'Expected { resolved: boolean }' })
 
-  const list = await getReports()
-  const report = list.find(r => r.id === id)
+  const report = await setReportResolved(String(id), resolved)
   if (!report) throw createError({ statusCode: 404, message: 'Report not found' })
-  report.resolved = resolved
-  await saveReports(list)
   return report
 })

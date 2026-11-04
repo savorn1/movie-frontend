@@ -482,7 +482,7 @@ function onUnlocked() {
       @playing="waiting = false"
       @volumechange="muted = video!.muted"
     >
-      <track kind="subtitles" srclang="km" label="ខ្មែរ" :src="source.subtitles" default @load="liftCues">
+      <track v-if="source.subtitles" kind="subtitles" srclang="km" label="ខ្មែរ" :src="source.subtitles" default @load="liftCues">
     </video>
 
     <!-- Tap / click surface for gestures -->

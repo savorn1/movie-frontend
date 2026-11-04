@@ -12,6 +12,16 @@ const lines = [
 export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   const ep = Number(getRouterParam(event, 'file')?.replace(/\.vtt$/, ''))
+
+  // movie-api series: pass its published subtitles through (404 when it has none or the episode is locked)
+  if (movieApiEnabled()) {
+    const vtt = await apiSubtitles(id, ep)
+    if (!vtt) throw createError({ statusCode: 404 })
+    setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')
+    setHeader(event, 'Cache-Control', 'public, max-age=300')
+    return vtt
+  }
+
   const movie = await findSeries(id)
   if (!movie || !Number.isInteger(ep) || ep < 1 || ep > movie.episodes) {
     throw createError({ statusCode: 404 })
