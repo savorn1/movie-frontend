@@ -1,5 +1,5 @@
 import {
-  browseIn, byCategoryOf, latestOf, rankNow, rankWeek, searchIn,
+  browseIn, byCategoryOf, featuredOf, latestOf, rankNow, rankWeek, searchIn,
   type Category, type LikeTotals, type Movie
 } from '#shared/data/movies'
 
@@ -14,7 +14,7 @@ export function useCatalog() {
   const latest = computed(() => latestOf(movies.value))
   const hotNow = computed(() => rankNow(movies.value))
   const hotWeek = computed(() => rankWeek(movies.value))
-  const featured = computed(() => movies.value.slice(0, 8))
+  const featured = computed(() => featuredOf(movies.value))
   const byCategory = (c: Category) => byCategoryOf(movies.value, c)
   const search = (term: string) => searchIn(movies.value, term)
   const browse = (opts: Parameters<typeof browseIn>[1], likes?: Record<number, LikeTotals>) => browseIn(movies.value, opts, likes)

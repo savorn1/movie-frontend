@@ -1,7 +1,7 @@
 import type { Movie } from '#shared/data/movies'
 
 /** Message every Telegram follower of a series about a new episode; drops people who blocked the bot */
-export async function notifyNewEpisode(movie: Movie, ep: number) {
+export async function notifyNewEpisode(movie: Movie, ep: number, source: 'AUTO' | 'MANUAL' = 'AUTO') {
   const { public: pub } = useRuntimeConfig()
   const site = pub.siteUrl.replace(/\/$/, '')
   const chats = await followersOf(movie.id)
@@ -29,5 +29,12 @@ export async function notifyNewEpisode(movie: Movie, ep: number) {
     await new Promise(r => setTimeout(r, 50))
   }
 
-  return { followers: chats.length, sent, removed, failed }
+  const result = { followers: chats.length, sent, removed, failed }
+  // The admin portal's alert history (movie-api writes it to VideoLingo's database)
+  if (movieApiEnabled()) {
+    await apiCall('POST', `/series/${movie.id}/alerts/log`, { episode: ep, source, ...result }).catch(() => {
+      console.warn(`[alerts] could not log the alert for #${movie.id} episode ${ep}`)
+    })
+  }
+  return result
 }

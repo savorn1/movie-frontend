@@ -4,6 +4,7 @@ const { find } = useCatalog()
 usePageMeta({ title: 'ខ្ញុំ', noindex: true })
 
 const { history, continueWatching, favorites, following, prefs } = useLibrary()
+const { viewer } = useViewer()
 const { reason: saverReason } = useDataSaver()
 const { state: installState, install } = useInstallApp()
 const hydrated = useHydrated()
@@ -41,7 +42,7 @@ function clearHistory() {
     <section class="profile">
       <div class="avatar" aria-hidden="true"><AppIcon name="user" :size="28" /></div>
       <div class="who">
-        <strong>ភ្ញៀវ</strong>
+        <strong><ClientOnly fallback="ភ្ញៀវ">{{ viewer?.displayName ?? 'ភ្ញៀវ' }}</ClientOnly></strong>
         <ClientOnly fallback=" ">
           <span>បានមើល {{ kh(episodesWatched) }} វគ្គ · រក្សាទុក {{ kh(favorites.length) }} រឿង</span>
         </ClientOnly>
@@ -55,6 +56,8 @@ function clearHistory() {
         <AppIcon name="chevron-right" :size="18" />
       </NuxtLink>
     </section>
+
+    <AccountPanel />
 
     <section class="appearance">
       <div class="head">

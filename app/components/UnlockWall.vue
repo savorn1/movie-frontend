@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { SERIES_UNLOCK_PRICE, type Movie } from '#shared/data/movies'
+import type { Movie } from '#shared/data/movies'
 
 const props = defineProps<{ movie: Movie; ep: number }>()
 const emit = defineEmits<{ unlocked: [] }>()
 
 const { unlockSeries } = useLibrary()
 const { show } = useToast()
+const { prices, planPrice } = useSite()
 
 const paying = ref(false)
 const isDev = import.meta.dev
@@ -29,14 +30,14 @@ function simulateUnlock() {
         <button type="button" class="option primary" @click="paying = true">
           <span class="o-head">
             <strong>ដោះសោរឿងនេះ</strong>
-            <span class="price">${{ SERIES_UNLOCK_PRICE }}</span>
+            <span class="price">${{ prices.seriesUnlock }}</span>
           </span>
           <span class="o-sub">គ្រប់វគ្គទាំង {{ kh(movie.episodes) }} នៃរឿងនេះ · បង់ម្តង</span>
         </button>
         <NuxtLink to="/vip" class="option">
           <span class="o-head">
             <strong>VIP គ្រប់រឿង</strong>
-            <span class="price">$1.99<small>/ខែ</small></span>
+            <span class="price">${{ planPrice(1) }}<small>/ខែ</small></span>
           </span>
           <span class="o-sub">ដោះសោរាល់រឿង VIP · Full HD</span>
         </NuxtLink>

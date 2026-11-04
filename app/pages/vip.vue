@@ -1,5 +1,8 @@
 <script setup lang="ts">
-usePageMeta({ title: 'សមាជិក VIP', description: 'ដោះសោគ្រប់វគ្គ VIP កម្រិតរូបភាព Full HD ចាប់ពី $1.25 ក្នុងមួយខែ។' })
+const { planPrice } = useSite()
+// The cheapest monthly rate across the plans, for the link preview
+const fromPerMonth = computed(() => Math.min(...([1, 3, 6, 12] as const).map(m => +(planPrice(m) / m).toFixed(2))))
+usePageMeta({ title: 'សមាជិក VIP', description: `ដោះសោគ្រប់វគ្គ VIP កម្រិតរូបភាព Full HD ចាប់ពី $${fromPerMonth.value} ក្នុងមួយខែ។` })
 
 interface Plan {
   id: string
@@ -9,12 +12,13 @@ interface Plan {
   badge?: string
 }
 
-const plans: Plan[] = [
-  { id: '1m', name: 'VIP ១ ខែ', price: 1.99, months: 1 },
-  { id: '3m', name: 'VIP ៣ ខែ', price: 4.99, months: 3, badge: 'ពេញនិយម' },
-  { id: '6m', name: 'VIP ៦ ខែ', price: 8.99, months: 6 },
-  { id: '12m', name: 'VIP ១២ ខែ', price: 14.99, months: 12, badge: 'តម្លៃល្អបំផុត' }
-]
+// Prices are set in videolingo-web (Streaming › Prices)
+const plans = computed<Plan[]>(() => [
+  { id: '1m', name: 'VIP ១ ខែ', price: planPrice(1), months: 1 },
+  { id: '3m', name: 'VIP ៣ ខែ', price: planPrice(3), months: 3, badge: 'ពេញនិយម' },
+  { id: '6m', name: 'VIP ៦ ខែ', price: planPrice(6), months: 6 },
+  { id: '12m', name: 'VIP ១២ ខែ', price: planPrice(12), months: 12, badge: 'តម្លៃល្អបំផុត' }
+])
 
 const perks = [
   'ទស្សនាភាពយន្ត & រឿងភាគ VIP គ្រប់ភាគ',

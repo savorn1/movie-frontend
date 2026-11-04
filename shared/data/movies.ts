@@ -36,6 +36,8 @@ export interface Movie {
   remote?: boolean
   /** VideoLingo series: which episodes have published subtitles (others get no track request) */
   subtitled?: Record<number, boolean>
+  /** Place in the home hero (1 first), set in videolingo-web; null/absent = not a hero pick */
+  featuredRank?: number | null
 }
 
 /*
@@ -61,6 +63,30 @@ export const FREE_EPISODES = 3
 
 // One-off price to unlock every VIP episode of a single series (vs. the monthly VIP plan)
 export const SERIES_UNLOCK_PRICE = 0.49
+
+/** Prices in US dollars: from videolingo-web (Streaming › Prices) through movie-api, else these */
+export interface SitePrices {
+  seriesUnlock: number
+  vipPlans: { months: 1 | 3 | 6 | 12; price: number }[]
+}
+
+export const DEFAULT_PRICES: SitePrices = {
+  seriesUnlock: SERIES_UNLOCK_PRICE,
+  vipPlans: [
+    { months: 1, price: 1.99 },
+    { months: 3, price: 4.99 },
+    { months: 6, price: 8.99 },
+    { months: 12, price: 14.99 }
+  ]
+}
+
+/** Hero slider: the series ranked in videolingo-web in rank order, else the first `count` */
+export function featuredOf(list: Movie[], count = 8): Movie[] {
+  const ranked = list
+    .filter(m => m.featuredRank != null)
+    .sort((a, b) => a.featuredRank! - b.featuredRank! || a.id - b.id)
+  return ranked.length ? ranked : list.slice(0, count)
+}
 
 // Placeholder artwork from picsum, seeded per series so images stay stable across reloads
 export const artworkFor = (id: number) => ({

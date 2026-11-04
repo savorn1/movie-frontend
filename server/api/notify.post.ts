@@ -15,5 +15,6 @@ export default defineEventHandler(async (event) => {
   if (!movie || !Number.isInteger(ep) || ep < 1) {
     throw createError({ statusCode: 400, message: 'Expected { seriesId, ep } for an existing series' })
   }
-  return notifyNewEpisode(movie, ep)
+  // A call with the secret is a person asking (the admin portal or a script), not the automatic check
+  return notifyNewEpisode(movie, ep, 'MANUAL')
 })

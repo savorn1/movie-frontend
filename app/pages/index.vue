@@ -19,7 +19,7 @@ const sections = computed(() => [
 <template>
   <div>
     <h1 class="sr-only">RuengFlix - រឿងភាគខ្មែរ ពេញភាគ និងអាប់ដេតថ្មីៗ</h1>
-    <HeroSlider :items="featured" />
+    <HeroSlider v-if="featured.length" :items="featured" />
 
     <div class="content">
       <ClientOnly>

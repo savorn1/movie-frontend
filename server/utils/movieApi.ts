@@ -1,4 +1,4 @@
-import { artworkFor, FREE_EPISODES, normalizeMovie, type Category, type Movie } from '#shared/data/movies'
+import { artworkFor, DEFAULT_PRICES, FREE_EPISODES, normalizeMovie, type Category, type Movie, type SitePrices } from '#shared/data/movies'
 
 /*
  * Client for movie-api (the Nest backend), the source of series, episodes and viewer data when
@@ -28,6 +28,8 @@ interface ApiSeries {
   /** ISO instants */
   latestEpisodeAt: string | null
   nextEpisodeAt: string | null
+  /** Hero slider place (1 first); null = not a hero pick */
+  featuredRank: number | null
 }
 
 export interface ApiEpisode {
@@ -55,7 +57,7 @@ const inflight = new Map<string, Promise<unknown>>()
 export const movieApiBase = () => useRuntimeConfig().movieApiBase.replace(/\/$/, '')
 /** Set: catalog and viewer data come from movie-api. Unset: sample series and .data on this server. */
 export const movieApiEnabled = () => !!movieApiBase()
-const authHeaders = () => ({ Authorization: `Bearer ${useRuntimeConfig().movieApiToken}` })
+export const authHeaders = () => ({ Authorization: `Bearer ${useRuntimeConfig().movieApiToken}` })
 
 /**
  * GET a catalog endpoint with a short cache. If movie-api is unreachable the last good copy is served
@@ -117,8 +119,19 @@ export function toMovie(s: ApiSeries): Movie {
     recapSeconds: s.recapSeconds,
     updatedAt: latest,
     nextEpisodeAt: toMs(s.nextEpisodeAt),
+    featuredRank: s.featuredRank ?? null,
     remote: true
   })
+}
+
+/** Drops the cached catalog, so the next request reads movie-api again (POST /api/refresh) */
+export function clearMovieApiCache() {
+  cache.clear()
+}
+
+/** Prices set in videolingo-web; the defaults while movie-api has never answered */
+export async function apiSite(): Promise<{ prices: SitePrices }> {
+  return (await apiGet<{ prices: SitePrices }>('/site')) ?? { prices: DEFAULT_PRICES }
 }
 
 export async function apiSeriesList() {

@@ -9,6 +9,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
 const solid = computed(() => scrolled.value || route.path !== '/')
+const { viewer, enabled, known } = useViewer()
+const onAuthPage = computed(() => route.path === '/login' || route.path === '/register')
 </script>
 
 <template>
@@ -25,6 +27,12 @@ const solid = computed(() => scrolled.value || route.path !== '/')
         <AppIcon name="history" :size="20" /><span>ប្រវត្តិមើល</span>
       </NuxtLink>
       <ThemeSwitcher class="theme" />
+      <template v-if="known && enabled">
+        <NuxtLink v-if="viewer" to="/library" class="op-btn account" :aria-label="`គណនី ${viewer.displayName}`">
+          <AppIcon name="user" :size="20" /><span>{{ viewer.displayName }}</span>
+        </NuxtLink>
+        <NuxtLink v-else-if="!onAuthPage" :to="{ path: '/login', query: { next: route.fullPath } }" class="login">ចូលគណនី</NuxtLink>
+      </template>
       <NuxtLink to="/vip" class="vip-pill" aria-label="សមាជិក VIP">
         <AppIcon name="crown" :size="16" /><span>VIP</span>
       </NuxtLink>
@@ -119,6 +127,13 @@ const solid = computed(() => scrolled.value || route.path !== '/')
   padding: 0 12px;
   border-radius: 999px;
   color: var(--text);
+}
+
+.account span {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .op-btn:hover {
