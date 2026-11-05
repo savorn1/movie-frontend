@@ -8,15 +8,63 @@ import type Hls from 'hls.js'
  */
 const { state, close } = useMiniPlayer()
 const { saveProgress } = useLibrary()
+const { reload: reloadEpisodes, episodesOf } = useSeriesEpisodes()
+
+// The link expired (they're short-lived): get a fresh one and carry on from the same second
+let lastRefresh = 0
+async function onError() {
+  const s = state.value
+  if (!s || s.type !== 'mp4' || Date.now() - lastRefresh < 15_000) return
+  lastRefresh = Date.now()
+  save()
+  try {
+    await reloadEpisodes(s.movieId)
+    const fresh = episodesOf(s.movieId)?.find(e => e.number === s.ep)?.videoUrl
+    if (!fresh) return dismiss()
+    s.src = fresh
+    attach()
+  } catch {
+    dismiss()
+  }
+}
 const route = useRoute()
 
 const video = ref<HTMLVideoElement>()
+const box = ref<HTMLElement>()
+
+/** Shrink from where the full player was into the corner (FLIP), once per hand-over */
+function shrinkIn() {
+  const s = state.value
+  const el = box.value
+  if (!s?.from || !el || reducedMotion()) return
+  const to = el.getBoundingClientRect()
+  const from = s.from
+  s.from = undefined
+  if (!from.width || !to.width) return
+  const dx = from.left - to.left
+  const dy = from.top - to.top
+  const scale = Math.min(4, from.width / to.width)
+  el.animate(
+    [
+      { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, transformOrigin: 'top left', opacity: 0.6 },
+      { transform: 'translate(0, 0) scale(1)', transformOrigin: 'top left', opacity: 1 }
+    ],
+    { duration: 380, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }
+  )
+}
 const playing = ref(false)
 const progress = ref(0)
 let hls: Hls | null = null
 let lastSave = 0
 
 const visible = computed(() => !!state.value && !route.path.startsWith('/watch/') && !route.meta.immersive)
+
+// Toasts and the back-to-top button move up above the corner player while it's showing
+const lift = useFloatLift('mini')
+watch([visible, box], async () => {
+  await nextTick()
+  lift.set(visible.value && box.value ? box.value.offsetHeight : 0)
+})
 
 async function attach() {
   const s = state.value
@@ -48,6 +96,7 @@ async function attach() {
 watch(visible, async (v) => {
   if (v) {
     await nextTick()
+    shrinkIn()
     attach()
   } else {
     save()
@@ -103,7 +152,7 @@ onBeforeUnmount(() => hls?.destroy())
 
 <template>
   <Transition name="mini">
-    <div v-if="visible && state" class="mini" role="region" :aria-label="`កំពុងចាក់ ${state.title} វគ្គ ${kh(state.ep)}`">
+    <div v-if="visible && state" ref="box" class="mini" role="region" :aria-label="`កំពុងចាក់ ${state.title} វគ្គ ${kh(state.ep)}`">
       <button type="button" class="screen" :aria-label="`បើក ${state.title} វគ្គ ${kh(state.ep)}`" @click="expand">
         <video
           ref="video"
@@ -113,6 +162,8 @@ onBeforeUnmount(() => hls?.destroy())
           @play="playing = true"
           @pause="playing = false; save()"
           @ended="dismiss"
+          @error="onError"
+          @contextmenu.prevent
         />
       </button>
       <div class="info">
@@ -134,8 +185,9 @@ onBeforeUnmount(() => hls?.destroy())
 .mini {
   position: fixed;
   right: 16px;
-  bottom: 24px;
+  bottom: var(--float-base);
   z-index: 80;
+  transition: bottom var(--dur) var(--ease-out);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -181,7 +233,7 @@ onBeforeUnmount(() => hls?.destroy())
 
 .info span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .ctl {
@@ -217,9 +269,4 @@ onBeforeUnmount(() => hls?.destroy())
   transform: translateY(16px);
 }
 
-@media (max-width: 1024px) {
-  .mini {
-    bottom: calc(76px + env(safe-area-inset-bottom));
-  }
-}
 </style>

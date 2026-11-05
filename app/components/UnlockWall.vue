@@ -44,11 +44,18 @@ onMounted(() => {
 })
 watch(() => viewer.value?.id, (id) => id && refreshWallet())
 
+/** The padlock opens (shackle lifts) just before the screen goes away */
+const opening = ref(false)
+
 async function opened(message: string) {
   await reload(props.movie.id)
   // Let the player see the new links before it tries again
   await nextTick()
   success(message)
+  if (!reducedMotion()) {
+    opening.value = true
+    await new Promise(r => setTimeout(r, 420))
+  }
   emit('unlocked')
 }
 
@@ -107,7 +114,13 @@ function simulateUnlock() {
 <template>
   <div class="wall" role="dialog" aria-modal="false" aria-labelledby="wall-title" @click.stop>
     <div class="card">
-      <span class="lock"><AppIcon name="lock" :size="22" solid /></span>
+      <span class="lock" :class="{ opening }" aria-hidden="true">
+        <!-- Drawn here (not AppIcon) so the shackle can lift on its own -->
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path class="shackle" d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          <rect x="6" y="11" width="12" height="9" rx="2" fill="currentColor" />
+        </svg>
+      </span>
       <h2 id="wall-title">{{ previewed ? 'ចង់ដឹងរឿងបន្តទេ?' : `វគ្គ ${kh(ep)} ជាវគ្គ VIP` }}</h2>
       <p class="lead">
         <template v-if="previewed">អ្នកបានមើលផ្នែកដំបូងនៃវគ្គ {{ kh(ep) }} ហើយ។ ដោះសោដើម្បីមើលបន្តពីត្រង់នេះ។</template>
@@ -134,7 +147,7 @@ function simulateUnlock() {
             <span class="price">${{ topUp.price.toFixed(2) }}</span>
           </span>
           <span class="o-sub">
-            វគ្គនេះ {{ kh(episodeCoins) }} កាក់ · អ្នកមាន {{ kh(wallet?.coins ?? 0) }}<template v-if="bonusPercent"> · ទទួលបាន {{ kh(topUp.coins + Math.floor(topUp.coins * bonusPercent / 100)) }} កាក់</template>
+            ≈ {{ riel(topUp.price) }} · វគ្គនេះ {{ kh(episodeCoins) }} កាក់ · អ្នកមាន {{ kh(wallet?.coins ?? 0) }}<template v-if="bonusPercent"> · ទទួលបាន {{ kh(topUp.coins + Math.floor(topUp.coins * bonusPercent / 100)) }} កាក់</template>
           </span>
         </button>
         <button type="button" class="option" @click="buy({ kind: 'SERIES', seriesId: movie.id }, `ដោះសោ “${movie.title}”`)">
@@ -142,7 +155,7 @@ function simulateUnlock() {
             <strong>ដោះសោរឿងនេះទាំងមូល</strong>
             <span class="price">${{ prices.seriesUnlock }}</span>
           </span>
-          <span class="o-sub">គ្រប់វគ្គទាំង {{ kh(movie.episodes) }} · បង់ម្តងតាម KHQR</span>
+          <span class="o-sub">≈ {{ riel(prices.seriesUnlock) }} · គ្រប់វគ្គទាំង {{ kh(movie.episodes) }} · បង់ម្តងតាម KHQR</span>
         </button>
         <NuxtLink :to="vipLink" class="option vip">
           <span class="tag">តម្លៃល្អបំផុត</span>
@@ -150,7 +163,7 @@ function simulateUnlock() {
             <strong><AppIcon name="crown" :size="16" /> VIP គ្រប់រឿង</strong>
             <span class="price">${{ planPrice(1) }}<small>/ខែ</small></span>
           </span>
-          <span class="o-sub">ដោះសោរាល់រឿង VIP · Full HD · ថ្លៃជាងវគ្គមួយៗ ពេលមើលច្រើន</span>
+          <span class="o-sub">≈ {{ riel(planPrice(1)) }}/ខែ · ដោះសោរាល់រឿង VIP · Full HD · ថ្លៃជាងវគ្គមួយៗ ពេលមើលច្រើន</span>
         </NuxtLink>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
       </div>
@@ -211,6 +224,22 @@ function simulateUnlock() {
   gap: 10px;
   width: min(420px, 100%);
   text-align: center;
+}
+
+/* Unlocking: the shackle lifts and swings open, then the badge glows green */
+.lock .shackle {
+  transform-box: fill-box;
+  transform-origin: 100% 100%;
+  transition: transform 320ms var(--ease-spring);
+}
+
+.lock.opening .shackle {
+  transform: translateY(-3px) rotate(28deg);
+}
+
+.lock.opening {
+  background: linear-gradient(135deg, #7ff0b0, #2fbf71);
+  transition: background 300ms var(--ease-out) 120ms;
 }
 
 .lock {
@@ -287,7 +316,7 @@ h2 {
   border-radius: 999px;
   background: linear-gradient(135deg, #ffe26a, #ffb800);
   color: #3a2600;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -371,5 +400,57 @@ h2 {
   font-size: 14px;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+.card::before {
+  display: none;
+}
+
+/*
+ * Upright phones: the choices come up as a sheet from the bottom, leaving the frozen last frame
+ * (the cliffhanger) visible above it
+ */
+@media (max-width: 768px) and (orientation: portrait) {
+  .wall {
+    place-items: end stretch;
+    padding: 0;
+    background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.3) 30%, rgba(0, 0, 0, 0.8) 100%);
+    backdrop-filter: none;
+  }
+
+  .card {
+    width: 100%;
+    max-height: 84dvh;
+    overflow-y: auto;
+    padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0;
+    background: rgba(18, 18, 22, 0.97);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
+    animation: sheet-up var(--dur-slow) var(--ease-out);
+  }
+
+  .card::before {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 5px;
+    margin-bottom: 4px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.25);
+  }
+
+  .lock {
+    width: 40px;
+    height: 40px;
+  }
+
+  h2 {
+    font-size: 22px;
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
 }
 </style>

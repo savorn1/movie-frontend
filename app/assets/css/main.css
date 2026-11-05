@@ -3,6 +3,34 @@
  * An inline script in <head> (see useTheme) resolves the choice before first paint and sets
  * <html data-theme="light|dark">; every themed rule keys off that attribute.
  */
+/*
+ * Motion: one set of timings for the whole app. Feedback is fast, moves between screens a little
+ * slower; things arrive with ease-out and leave with ease-in. Only transform and opacity move, so it
+ * stays smooth on low-end phones. "Reduce motion" turns all of it into plain fades or nothing.
+ */
+:root {
+  --dur-fast: 150ms;
+  --dur: 220ms;
+  --dur-slow: 380ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.2, 1.5, 0.4, 1);
+  /* Bottom of the floating layer (toasts, back-to-top, prompts); --float-lift is set by useFloatLift */
+  --float-base: 24px;
+  --float-lift: 0px;
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --float-base: calc(76px + env(safe-area-inset-bottom));
+  }
+
+  /* The tab bar has slid away while scrolling down (MobileTabBar) */
+  :root.tabbar-hidden {
+    --float-base: calc(16px + env(safe-area-inset-bottom));
+  }
+}
+
 :root {
   color-scheme: dark;
   --bg: #000000;
@@ -86,6 +114,8 @@ body {
  * - Khmer stacks consonants below the line (coeng) and vowels above it, so leading is
  *   looser than for Latin: 1.7 for reading, 1.45 for headings.
  * - Khmer has no spaces between words; never letter-space Khmer text.
+ * - Nothing in Khmer below 13px: the stacked marks blur together under that. Only digits and
+ *   Latin labels (time codes, counts, "VIP") go smaller.
  */
 :root {
   --font-ui: 'Kantumruy Pro', 'Noto Sans Khmer', 'Khmer Sangam MN', 'Khmer UI', system-ui, sans-serif;
@@ -264,11 +294,133 @@ button {
 /* Page cross-fade (Nuxt experimental.viewTransition); fixed chrome stays put */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 0.22s;
+  animation-duration: var(--dur);
+}
+
+/* The tapped poster grows into the series page's poster (and back); see usePosterMorph */
+::view-transition-group(poster) {
+  animation-duration: var(--dur-slow);
+  animation-timing-function: var(--ease-out);
+}
+
+::view-transition-old(poster),
+::view-transition-new(poster) {
+  height: 100%;
+  object-fit: cover;
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* Pressing anything tappable dips it slightly under the finger */
+.btn,
+.option,
+.pack,
+.poster,
+.action,
+.chips button,
+.tags button,
+.go {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.btn:active:not(:disabled),
+.option:active:not(:disabled),
+.pack:active,
+.poster:active,
+.action:active,
+.chips button:active:not(:disabled),
+.tags button:active,
+.go:active {
+  transform: scale(0.97);
+}
+
+/* Lists arrive one after another: the first eight items, 30 ms apart; the rest at once */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.cascade > * {
+  animation: rise var(--dur) var(--ease-out) both;
+}
+
+.cascade > :nth-child(2) { animation-delay: 30ms; }
+.cascade > :nth-child(3) { animation-delay: 60ms; }
+.cascade > :nth-child(4) { animation-delay: 90ms; }
+.cascade > :nth-child(5) { animation-delay: 120ms; }
+.cascade > :nth-child(6) { animation-delay: 150ms; }
+.cascade > :nth-child(7) { animation-delay: 180ms; }
+.cascade > :nth-child(n + 8) { animation-delay: 210ms; }
+
+/* A one-time "look here" for a button that just became useful */
+@keyframes nudge {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.08);
+  }
+}
+
+/* Small pop for badges and icons that change */
+@keyframes pop-in {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+/* Shared fade for skeleton → content swaps (<Transition name="swap" mode="out-in">) */
+.swap-enter-active {
+  transition: opacity var(--dur) var(--ease-out);
+}
+
+.swap-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-in);
+}
+
+.swap-enter-from,
+.swap-leave-to {
+  opacity: 0;
 }
 
 ::view-transition-group(header),
 ::view-transition-group(sidebar),
 ::view-transition-group(tabbar) {
   animation: none;
+}
+
+/* Coins flying into the header chip (useCoinFlight) */
+.flying-coin {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 200;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff3a8, #ffd101 45%, #c99a00);
+  box-shadow: 0 0 0 1.5px #a67c00 inset, 0 2px 6px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+/* Links to a section (/library#wallet, #missions) stop below the fixed header, not under it */
+[id] {
+  scroll-margin-top: 80px;
 }

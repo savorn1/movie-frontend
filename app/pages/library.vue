@@ -81,7 +81,7 @@ function clearHistory() {
 
     <ClientOnly>
       <WalletPanel />
-      <MissionsCard class="me-card" />
+      <MissionsCard id="missions" class="me-card" />
       <InviteCard class="me-card" />
     </ClientOnly>
 
@@ -120,7 +120,7 @@ function clearHistory() {
           <h2>បន្តមើល</h2>
           <button v-if="continueWatching.length" type="button" class="link" @click="clearHistory">សម្អាតប្រវត្តិ</button>
         </div>
-        <div v-if="continueWatching.length" class="grid">
+        <div v-if="continueWatching.length" class="grid cascade">
           <ContinueCard
             v-for="{ entry, movie } in continueWatching"
             :key="movie.id"
@@ -146,7 +146,7 @@ function clearHistory() {
         <div class="head">
           <h2>ចំណូលចិត្ត</h2>
         </div>
-        <div v-if="favoriteMovies.length" class="grid">
+        <div v-if="favoriteMovies.length" class="grid cascade">
           <PosterCard v-for="m in favoriteMovies" :key="m.id" :movie="m" />
         </div>
         <EmptyState v-else icon="heart" message="ចុច “រក្សាទុក” នៅលើរឿងណាមួយ ដើម្បីរក្សាទុកវានៅទីនេះ។">

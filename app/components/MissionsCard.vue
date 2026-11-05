@@ -35,8 +35,12 @@ async function load() {
 onMounted(load)
 watch(() => viewer.value?.id, load)
 
-async function claim(m: Mission) {
+const { fly } = useCoinFlight()
+
+async function claim(m: Mission, e: MouseEvent) {
+  const button = e.currentTarget as HTMLElement
   busy.value = m.key
+  fly(button, m.coins)
   try {
     const r = await $fetch<{ coins: number; missions: Mission[]; wallet: NonNullable<typeof wallet.value> }>(`/api/missions/${m.key}/claim`, { method: 'POST' })
     missions.value = r.missions
@@ -56,7 +60,7 @@ const allDone = computed(() => !!missions.value?.length && missions.value.every(
   <section v-if="viewer && missions?.length" class="missions" :class="{ compact }" aria-labelledby="missions-title">
     <h2 id="missions-title"><AppIcon name="sparkle" :size="18" /> បេសកកម្មថ្ងៃនេះ</h2>
     <p v-if="allDone" class="done">បានបញ្ចប់ទាំងអស់ហើយ · ត្រឡប់មកវិញថ្ងៃស្អែក!</p>
-    <ul>
+    <ul class="cascade">
       <li v-for="m in missions" :key="m.key" :class="{ claimed: m.claimed }">
         <span class="ic"><AppIcon :name="m.claimed ? 'check' : LABELS[m.key].icon" :size="16" /></span>
         <div class="body">
@@ -66,7 +70,7 @@ const allDone = computed(() => !!missions.value?.length && missions.value.every(
           </span>
           <small>{{ kh(m.progress) }}/{{ kh(m.goal) }} · +{{ kh(m.coins) }} កាក់</small>
         </div>
-        <button v-if="!m.claimed && m.progress >= m.goal" type="button" class="btn btn-primary" :disabled="busy === m.key" @click="claim(m)">
+        <button v-if="!m.claimed && m.progress >= m.goal" type="button" class="btn btn-primary ready" :disabled="busy === m.key" @click="claim(m, $event)">
           ទទួល +{{ kh(m.coins) }}
         </button>
         <span v-else-if="m.claimed" class="got">បានទទួល</span>
@@ -162,13 +166,21 @@ li {
   display: block;
   height: 100%;
   background: var(--accent);
-  transition: width 0.3s;
 }
 
 small,
 .got {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
+}
+
+/* A mission that can be collected nudges once, not forever */
+.ready {
+  animation: nudge 600ms var(--ease-out) 300ms 2;
+}
+
+.bar span {
+  transition: width var(--dur-slow) var(--ease-out);
 }
 
 .btn {

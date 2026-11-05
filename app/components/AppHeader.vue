@@ -16,6 +16,35 @@ const onAuthPage = computed(() => route.path === '/login' || route.path === '/re
 const { wallet, refresh: refreshWallet } = useWallet()
 watch(() => viewer.value?.id, (id) => id && !wallet.value && refreshWallet(), { immediate: true })
 const checkInWaiting = computed(() => !!wallet.value && !wallet.value.checkIn.doneToday)
+
+// The number counts to the new balance (after flying coins land), instead of jumping
+const { landsAt } = useCoinFlight()
+const shownCoins = ref(0)
+let countFrame = 0
+watch(
+  () => wallet.value?.coins,
+  (to, from) => {
+    // Runs during server rendering too (immediate), where there are no animation frames
+    if (import.meta.client) cancelAnimationFrame(countFrame)
+    if (to == null) return
+    if (from == null || !import.meta.client || reducedMotion()) {
+      shownCoins.value = to
+      return
+    }
+    const begin = shownCoins.value
+    const wait = Math.max(0, landsAt.value - Date.now())
+    setTimeout(() => {
+      const t0 = performance.now()
+      const step = (t: number) => {
+        const k = Math.min(1, (t - t0) / 500)
+        shownCoins.value = Math.round(begin + (to - begin) * (1 - (1 - k) ** 3))
+        if (k < 1) countFrame = requestAnimationFrame(step)
+      }
+      countFrame = requestAnimationFrame(step)
+    }, wait)
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
@@ -39,8 +68,8 @@ const checkInWaiting = computed(() => !!wallet.value && !wallet.value.checkIn.do
           class="coin-chip"
           :aria-label="`កាក់ ${kh(wallet.coins)}${checkInWaiting ? ' · មានកាក់ឥតគិតថ្លៃថ្ងៃនេះ' : ''}`"
         >
-          <AppIcon name="coin" :size="16" /><span>{{ kh(wallet.coins) }}</span>
-          <i v-if="checkInWaiting" class="dot" aria-hidden="true" />
+          <AppIcon name="coin" :size="16" /><span>{{ kh(shownCoins) }}</span>
+          <Transition name="dot"><i v-if="checkInWaiting" class="dot" aria-hidden="true" /></Transition>
         </NuxtLink>
         <NuxtLink v-if="viewer" to="/library" class="op-btn account" :aria-label="`គណនី ${viewer.displayName}`">
           <AppIcon name="user" :size="20" /><span>{{ viewer.displayName }}</span>
@@ -206,6 +235,15 @@ const checkInWaiting = computed(() => !!wallet.value && !wallet.value.checkIn.do
   box-shadow: 0 0 0 2px var(--bg);
 }
 
+.dot-leave-active {
+  transition: transform var(--dur) var(--ease-in), opacity var(--dur) var(--ease-in);
+}
+
+.dot-leave-to {
+  transform: scale(0);
+  opacity: 0;
+}
+
 .vip-pill {
   display: flex;
   align-items: center;
@@ -221,6 +259,34 @@ const checkInWaiting = computed(() => !!wallet.value && !wallet.value.checkIn.do
 
 .vip-pill:hover {
   filter: brightness(1.05);
+}
+
+/* Small tablets and landscape phones: history and account shrink to icons so search keeps its room */
+@media (max-width: 1024px) {
+  .header {
+    gap: 16px;
+  }
+
+  .logo {
+    width: auto;
+  }
+
+  .op-btn span {
+    display: none;
+  }
+
+  .op-btn {
+    width: 44px;
+    justify-content: center;
+    padding: 0;
+  }
+}
+
+/* The smallest phones (320 px): the "R" mark alone leaves room for coins and VIP */
+@media (max-width: 359px) {
+  .logo-text {
+    display: none;
+  }
 }
 
 /* On phones search and history live in the tab bar, so the header keeps brand and VIP */

@@ -48,7 +48,9 @@ export default defineNuxtConfig({
       vapidPublicKey: '',
       // videolingo-web admin URL, linked from /admin (NUXT_PUBLIC_VIDEOLINGO_ADMIN_URL)
       videolingoAdminUrl: '',
-      siteUrl: 'http://localhost:3010'
+      siteUrl: 'http://localhost:3010',
+      // Riel shown next to dollar prices ("≈ ៛4,100"); payments stay in USD (NUXT_PUBLIC_KHR_PER_USD)
+      khrPerUsd: 4100
     }
   },
   // Who follows which series (Telegram chat ids). Swap the fs driver for Redis/KV in production.
@@ -59,6 +61,8 @@ export default defineNuxtConfig({
       ratings: { driver: 'fs', base: './.data/ratings' },
       // The series catalog edited from /admin (seeded with sample content on first run)
       catalog: { driver: 'fs', base: './.data/catalog' },
+      // Resized artwork from /img (a cache: safe to delete, rebuilt on demand)
+      images: { driver: 'fs', base: './.data/images' },
       // Per-episode starts/completions, and viewer problem reports
       insights: { driver: 'fs', base: './.data/insights' },
       reports: { driver: 'fs', base: './.data/reports' }

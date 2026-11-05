@@ -65,12 +65,14 @@ usePageMeta(() => ({
     <div class="layout">
       <div class="main-col">
         <ClientOnly>
+          <Transition name="swap" mode="out-in">
           <BingePlayer v-if="playerReady" :movie="playable" :ep="ep" />
           <div v-else-if="episodesStatus === 'error'" class="player-skeleton load-error" role="alert">
             <p>មិនអាចផ្ទុកវគ្គនេះបានទេ។</p>
             <button type="button" class="btn btn-primary" @click="retryEpisodes()">ព្យាយាមម្តងទៀត</button>
           </div>
           <div v-else class="player-skeleton" :style="{ backgroundImage: `url(${movie.banner})` }" />
+          </Transition>
           <template #fallback>
             <div class="player-skeleton" :style="{ backgroundImage: `url(${movie.banner})` }" />
           </template>

@@ -16,7 +16,7 @@ withDefaults(defineProps<{ movie: Movie; rank: number; width?: number }>(), { wi
     <span class="rank" aria-hidden="true">{{ toKhmerDigits(rank) }}</span>
     <span class="poster">
       <span class="note">{{ movie.episode }}</span>
-      <img :src="movie.poster" alt="" loading="lazy">
+      <img :src="imgSrc(movie.poster, width)" :srcset="imgSrcset(movie.poster, width)" alt="" loading="lazy">
     </span>
   </NuxtLink>
 </template>

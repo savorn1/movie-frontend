@@ -47,7 +47,7 @@ function onKey(e: KeyboardEvent) {
       </button>
     </div>
 
-    <div id="rank-panel" class="grid" role="tabpanel" :aria-labelledby="`tab-${active}`">
+    <div id="rank-panel" class="grid cascade" role="tabpanel" :aria-labelledby="`tab-${active}`">
       <RankCard v-for="(m, i) in list" :key="`${active}-${m.id}`" :movie="m" :rank="i + 1" />
     </div>
   </div>

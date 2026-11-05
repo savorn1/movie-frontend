@@ -94,6 +94,7 @@ const close = () => dialog.value?.close()
         <span v-if="p.badge" class="badge">{{ p.badge }}</span>
         <h2>{{ p.name }}</h2>
         <div class="price"><sup>$</sup>{{ p.price }}<small>ដុល្លារ</small></div>
+        <p class="khr">≈ {{ riel(p.price) }}</p>
         <p class="per">
           ត្រឹមតែ ${{ perMonth(p) }} / ខែ<template v-if="p.months > 1"> · សន្សំសំចៃ</template>
         </p>
@@ -222,6 +223,18 @@ const close = () => dialog.value?.close()
   margin: 0 0 12px;
   color: var(--text-strong);
   font-size: 17px;
+}
+
+/* Riel guide next to dollar prices */
+.khr {
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+p.khr {
+  margin: 4px 0 0;
 }
 
 .price {

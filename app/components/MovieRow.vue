@@ -55,7 +55,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', update))
       :class="{ small }"
       :style="col && { '--col': `${col[0]}px`, '--col-sm': `${col[1]}px` }"
     >
-      <div ref="track" class="items" :class="{ small }" @scroll.passive="update">
+      <div ref="track" class="items cascade" :class="{ small }" @scroll.passive="update">
         <slot>
           <PosterCard v-for="(m, i) in items" :key="m.id" :movie="m" :eager="i < 4" />
         </slot>

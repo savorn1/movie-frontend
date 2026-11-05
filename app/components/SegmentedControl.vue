@@ -79,7 +79,7 @@ function onKey(e: KeyboardEvent) {
 
 .sub {
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 400;
 }
 </style>

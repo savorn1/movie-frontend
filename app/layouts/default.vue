@@ -58,8 +58,18 @@ const route = useRoute()
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 8px 20px;
+  gap: 0 8px;
   margin-bottom: 10px;
+}
+
+/* Tall enough to hit with a thumb (≥ 36 px), spaced by their own padding */
+.site-footer nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 14px;
 }
 
 .site-footer a:hover {

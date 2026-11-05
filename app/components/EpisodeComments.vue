@@ -30,6 +30,8 @@ const error = ref('')
 const reported = ref(new Set<number>())
 const MAX = 500
 const liking = ref(new Set<number>())
+/** The comment whose heart just got liked: pops and bursts */
+const burst = ref<number | null>(null)
 watch(total, n => emit('count', n), { immediate: true })
 
 async function load() {
@@ -87,6 +89,11 @@ async function toggleLike(c: CommentItem) {
   c.liked = like
   c.likes += like ? 1 : -1
   haptic('tap')
+  if (like) {
+    burst.value = null
+    nextTick(() => (burst.value = c.id))
+    setTimeout(() => burst.value === c.id && (burst.value = null), 700)
+  }
   try {
     const r = await $fetch<{ likes: number; liked: boolean }>(`/api/comments/${c.id}/like`, { method: 'PUT', body: { like } })
     c.likes = r.likes
@@ -144,7 +151,7 @@ const ago = (iso: string) => {
       <NuxtLink :to="{ path: '/login', query: { next: route.fullPath } }">ចូលគណនី</NuxtLink> ដើម្បីបញ្ចេញមតិ
     </p>
 
-    <ul v-if="items.length" class="list">
+    <ul v-if="items.length" class="list cascade">
       <li v-for="c in items" :key="c.id" :class="{ pinned: c.pinned }">
         <img loading="lazy" decoding="async" v-if="c.author.photoUrl" :src="c.author.photoUrl" alt="" class="avatar" width="32" height="32" referrerpolicy="no-referrer">
         <span v-else class="avatar initial" aria-hidden="true">{{ c.author.displayName.slice(0, 1) }}</span>
@@ -170,7 +177,11 @@ const ago = (iso: string) => {
               :aria-label="`ចូលចិត្ត · ${kh(c.likes)}`"
               @click="toggleLike(c)"
             >
-              <AppIcon name="heart" :size="15" :solid="c.liked" /> <span v-if="c.likes">{{ kh(c.likes) }}</span>
+              <span class="heart" :class="{ popping: burst === c.id }">
+                <AppIcon name="heart" :size="15" :solid="c.liked" />
+                <i v-if="burst === c.id" class="sparks" aria-hidden="true"><b v-for="n in 6" :key="n" :style="{ '--n': n }" /></i>
+              </span>
+              <span v-if="c.likes">{{ kh(c.likes) }}</span>
             </button>
             <button v-if="c.mine" type="button" @click="remove(c)">លុប</button>
             <button v-else-if="viewer && !reported.has(c.id)" type="button" @click="report(c)">រាយការណ៍</button>
@@ -301,6 +312,40 @@ textarea {
   gap: 4px;
 }
 
+.heart {
+  position: relative;
+  display: inline-grid;
+}
+
+.heart.popping {
+  animation: pop-in 420ms var(--ease-spring);
+}
+
+/* Six little hearts flying out of a new like */
+.sparks b {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px;
+  border-radius: 50%;
+  background: #e5484d;
+  animation: spark 600ms var(--ease-out) forwards;
+  --a: calc(var(--n) * 60deg);
+}
+
+@keyframes spark {
+  from {
+    transform: rotate(var(--a)) translateY(0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: rotate(var(--a)) translateY(-14px) scale(0.3);
+    opacity: 0;
+  }
+}
+
 .like.on {
   color: #e5484d !important;
 }
@@ -318,7 +363,7 @@ textarea {
   gap: 4px;
   margin: 0 0 2px;
   color: var(--accent-text);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -371,7 +416,7 @@ textarea {
   border-radius: 999px;
   background: var(--accent);
   color: var(--accent-ink);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
 }
 </style>

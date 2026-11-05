@@ -125,7 +125,7 @@ const reset = () => router.replace({ query: sort.value === 'latest' ? {} : { sor
       <button v-if="filtered" type="button" class="link" @click="reset">សម្អាតតម្រង</button>
     </p>
 
-    <div v-if="results.length" class="grid">
+    <div v-if="results.length" class="grid cascade">
       <PosterCard v-for="(m, i) in results" :key="m.id" :movie="m" :eager="i < 6" />
     </div>
     <EmptyState v-else icon="compass" message="មិនមានរឿងដែលត្រូវនឹងតម្រងទាំងនេះទេ។">
@@ -141,6 +141,8 @@ const reset = () => router.replace({ query: sort.value === 'latest' ? {} : { sor
   top: 64px;
   z-index: 20;
   display: grid;
+  /* One column no wider than the screen: chip rows scroll sideways instead of widening the page */
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   margin: 0 -32px 8px;
   padding: 10px 32px;
@@ -196,6 +198,7 @@ const reset = () => router.replace({ query: sort.value === 'latest' ? {} : { sor
 
 .groups {
   display: flex;
+  max-width: 100%;
   gap: 8px 16px;
   min-width: 0;
   overflow-x: auto;

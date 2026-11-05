@@ -37,6 +37,39 @@ onMounted(() => {
 })
 onBeforeUnmount(() => window.removeEventListener('resize', measure))
 
+// Artwork that fails to load (or failed before hydration) becomes a tinted tile with the title
+const posterEl = ref<HTMLImageElement>()
+const posterFailed = ref(false)
+onMounted(() => {
+  const el = posterEl.value
+  if (el?.complete && !el.naturalWidth) posterFailed.value = true
+})
+
+/*
+ * Phones: once the big Play button scrolls away, a slim Play bar stays above the tab bar so the
+ * episode list never strands the viewer. Not while the corner player is showing (it plays already).
+ */
+const playBtn = ref<{ $el: HTMLElement }>()
+const dock = ref<HTMLElement>()
+const playOffscreen = ref(false)
+const { state: miniState } = useMiniPlayer()
+const dockShown = computed(() => playOffscreen.value && !miniState.value)
+const dockLift = useFloatLift('play-dock')
+let playObserver: IntersectionObserver | undefined
+onMounted(() => {
+  const el = playBtn.value?.$el
+  if (!el || !('IntersectionObserver' in window)) return
+  playObserver = new IntersectionObserver(([e]) => {
+    playOffscreen.value = !!e && !e.isIntersecting && e.boundingClientRect.top < 0 && window.matchMedia('(max-width: 640px)').matches
+  })
+  playObserver.observe(el)
+})
+onBeforeUnmount(() => playObserver?.disconnect())
+watch([dockShown, dock], async () => {
+  await nextTick()
+  dockLift.set(dockShown.value && dock.value ? dock.value.offsetHeight : 0)
+})
+
 // Shown as the Telegram / Facebook preview: artwork, Khmer title with episode count, genres
 usePageMeta(() => ({
   title: `${movie.value!.title} · ${kh(movie.value!.episodes)} វគ្គ`,
@@ -77,8 +110,19 @@ useHead({
     </div>
 
     <section class="detail">
-      <img :src="movie.poster" :alt="movie.title" class="poster">
-      <div class="info">
+      <div v-if="posterFailed" class="poster fallback" role="img" :aria-label="movie.title">
+        <span>{{ movie.title }}</span>
+      </div>
+      <img
+        v-else
+        ref="posterEl"
+        :src="imgSrc(movie.poster, 240)"
+        :srcset="imgSrcset(movie.poster, 240)"
+        :alt="movie.title"
+        class="poster"
+        @error="posterFailed = true"
+      >
+      <div class="info cascade">
         <h1 class="display">{{ movie.title }}</h1>
         <p class="meta">
           <span v-if="movie.vip" class="vip-badge">VIP</span>
@@ -94,7 +138,7 @@ useHead({
         </button>
 
         <div class="actions">
-          <NuxtLink :to="`/watch/${movie.id}/${resumeEp ?? 1}`" class="btn btn-primary play">
+          <NuxtLink ref="playBtn" :to="`/watch/${movie.id}/${resumeEp ?? 1}`" class="btn btn-primary play">
             <AppIcon name="play" :size="18" />
             <ClientOnly fallback="ចាក់វគ្គ ១">{{ resumeEp ? `បន្តមើលវគ្គ ${kh(resumeEp)}` : 'ចាក់វគ្គ ១' }}</ClientOnly>
           </NuxtLink>
@@ -126,7 +170,21 @@ useHead({
       </ClientOnly>
     </section>
 
-    <MovieRow title="រឿងស្រដៀងគ្នា" :items="related" small />
+    <MovieRow v-if="related.length" title="រឿងស្រដៀងគ្នា" :items="related" small />
+
+    <ClientOnly>
+      <Transition name="dock">
+        <div v-if="dockShown" ref="dock" class="play-dock">
+          <span class="dock-text">
+            <strong>{{ movie.title }}</strong>
+            <small>{{ resumeEp ? `បន្តពីវគ្គ ${kh(resumeEp)}` : `${kh(movie.episodes)} វគ្គ` }}</small>
+          </span>
+          <NuxtLink :to="`/watch/${movie.id}/${resumeEp ?? 1}`" class="btn btn-primary">
+            <AppIcon name="play" :size="16" />{{ resumeEp ? 'បន្តមើល' : 'ចាក់' }}
+          </NuxtLink>
+        </div>
+      </Transition>
+    </ClientOnly>
   </div>
 </template>
 
@@ -189,6 +247,78 @@ useHead({
   border-radius: 16px;
   background: var(--bg-elev-2);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.poster.fallback {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 30% 20%, rgb(var(--ambient) / 0.55), transparent 70%),
+    linear-gradient(160deg, var(--bg-elev-2), var(--bg-elev));
+  color: var(--text-strong);
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* Slim Play bar on phones once the big button has scrolled away */
+.play-dock {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: var(--float-base);
+  z-index: 58;
+  transition: bottom var(--dur) var(--ease-out);
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-elev);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.dock-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.dock-text strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock-text small {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.play-dock .btn {
+  min-height: 44px;
+  padding: 0 18px;
+  white-space: nowrap;
+}
+
+.dock-enter-active {
+  transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+}
+
+.dock-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-in), transform var(--dur-fast) var(--ease-in);
+}
+
+.dock-enter-from,
+.dock-leave-to {
+  opacity: 0;
+  transform: translateY(16px);
 }
 
 .info {
@@ -327,8 +457,17 @@ h1 {
     text-align: center;
   }
 
+  /* Smaller artwork so the episode list starts higher up */
   .poster {
-    width: 170px;
+    width: 132px;
+  }
+
+  .poster.fallback {
+    font-size: 17px;
+  }
+
+  .play-dock {
+    display: flex;
   }
 
   .meta,
@@ -344,5 +483,10 @@ h1 {
   .desc {
     margin: 0 auto;
   }
+}
+
+/* The poster tapped on the previous page grows into this one (usePosterMorph) */
+.detail .poster {
+  view-transition-name: poster;
 }
 </style>

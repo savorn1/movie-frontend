@@ -12,6 +12,8 @@ export interface SeriesEpisode {
   hasSubtitles: boolean
   /** The first VIP episode while locked: a link to its opening and how many seconds may be watched */
   preview: { url: string; seconds: number } | null
+  /** When the (short-lived) video links stop working, ms since epoch */
+  linksExpireAt?: number
 }
 
 /**

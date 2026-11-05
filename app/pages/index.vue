@@ -8,6 +8,12 @@ const top10 = computed(() => hotNow.value.slice(0, 10))
 const forYou = useForYou()
 const becauseYouWatched = useBecauseYouWatched()
 
+// Watch history lives in the browser, so these rows appear after the page loads. Remember how many
+// there were last time and hold that space on the server-rendered page, so nothing below jumps.
+const personalRows = useCookie<number>('rf-rows', { default: () => 0, maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' })
+const personalNow = computed(() => (newForYou.value.length ? 1 : 0) + (continueWatching.value.length ? 1 : 0))
+onMounted(() => watch(personalNow, (n) => (personalRows.value = n), { immediate: true }))
+
 // Swipeable rows keep Home short; the full grids live on Browse, pre-filtered by "See all"
 const sections = computed(() => [
   { title: 'អាប់ដេតថ្មី', more: '/browse', items: latest.value.slice(0, 12) },
@@ -23,9 +29,8 @@ const sections = computed(() => [
     <HeroSlider v-if="featured.length" :items="featured" />
 
     <div class="content">
+      <!-- Posters first: the viewer's own rows, then today's top 10, then everything else -->
       <ClientOnly>
-        <GenrePicker />
-        <MissionsCard compact class="missions-row" />
         <MovieRow
           v-if="newForYou.length"
           title="វគ្គថ្មីសម្រាប់អ្នក"
@@ -48,6 +53,18 @@ const sections = computed(() => [
             :entry="entry"
           />
         </MovieRow>
+        <template #fallback>
+          <RowSkeleton v-for="i in Math.min(2, Number(personalRows) || 0)" :key="i" />
+        </template>
+      </ClientOnly>
+
+      <MovieRow title="កំពុងពេញនិយមថ្ងៃនេះ" more="/hot" :items="[]" small hot :col="[176, 150]">
+        <RankPoster v-for="(m, i) in top10" :key="m.id" :movie="m" :rank="i + 1" :width="120" class="top10" />
+      </MovieRow>
+
+      <ClientOnly>
+        <GenrePicker />
+        <MissionsLine />
         <MovieRow
           v-if="becauseYouWatched"
           :title="`ព្រោះអ្នកបានមើល “${becauseYouWatched.source.title}”`"
@@ -65,9 +82,6 @@ const sections = computed(() => [
         />
       </ClientOnly>
 
-      <MovieRow title="កំពុងពេញនិយមថ្ងៃនេះ" more="/hot" :items="[]" small hot :col="[176, 150]">
-        <RankPoster v-for="(m, i) in top10" :key="m.id" :movie="m" :rank="i + 1" :width="120" class="top10" />
-      </MovieRow>
       <MovieRow v-for="s in sections" :key="s.title" :title="s.title" :more="s.more" :items="s.items" small :col="[168, 124]" />
     </div>
   </div>
@@ -92,8 +106,5 @@ const sections = computed(() => [
   .content {
     padding: 16px 16px 0;
   }
-}
-.missions-row {
-  margin-bottom: 24px;
 }
 </style>

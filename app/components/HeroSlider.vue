@@ -9,7 +9,11 @@ const current = computed(() => props.items[index.value]!)
 // (after hydration only: the server can't see the viewer's connection)
 const { active: saveData } = useDataSaver()
 const hydrated = useHydrated()
-const bannerOf = (m: Movie) => (hydrated.value && saveData.value ? m.banner.replace('/1600/700', '/800/350') : m.banner)
+// Resized banners: phones get the 960 px one (CSS picks by screen width), Save-Data gets it everywhere
+const bannerSmall = (m: Movie) => imgSrc(m.banner, 960)
+const bannerLarge = (m: Movie) => (hydrated.value && saveData.value ? bannerSmall(m) : imgSrc(m.banner, 1920))
+// The one this screen shows (for the preload / shimmer)
+const bannerOf = (m: Movie) => (import.meta.client && window.matchMedia('(max-width: 768px)').matches ? bannerSmall(m) : bannerLarge(m))
 
 // A shimmer until the current banner has arrived (slow connections otherwise see a flat dark box)
 const loadedBanners = ref(new Set<string>())
@@ -98,7 +102,7 @@ onBeforeUnmount(() => {
         v-show="i === index"
         :key="m.id"
         class="slide"
-        :style="{ backgroundImage: `url(${bannerOf(m)})` }"
+        :style="{ '--bg-sm': `url(${bannerSmall(m)})`, '--bg-lg': `url(${bannerLarge(m)})` }"
         role="group"
         aria-roledescription="slide"
         :aria-label="`${i + 1} / ${items.length}`"
@@ -147,7 +151,7 @@ onBeforeUnmount(() => {
           :aria-current="i === index"
           @click="go(i)"
         >
-          <img :src="m.poster" alt="" loading="lazy">
+          <img :src="imgSrc(m.poster, 80)" :srcset="imgSrcset(m.poster, 80)" alt="" loading="lazy">
         </button>
       </div>
       <div class="dots" aria-hidden="true">
@@ -198,7 +202,24 @@ onBeforeUnmount(() => {
 }
 
 .slide {
-  background: center / cover no-repeat;
+  background: var(--bg-lg) center / cover no-repeat;
+  /* A slow, gentle zoom while a slide is shown (restarts each time it's shown) */
+  animation: slow-zoom 12s var(--ease-out) both;
+}
+
+@media (max-width: 768px) {
+  .slide {
+    background-image: var(--bg-sm);
+  }
+}
+
+@keyframes slow-zoom {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.06);
+  }
 }
 
 .fade-enter-active,

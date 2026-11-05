@@ -32,7 +32,7 @@ const left = computed(() => steps.value.filter(s => !s.done).length)
   </section>
   <section v-else-if="viewer && left > 0 && history.length < 3" class="start">
     <h2>ចាប់ផ្តើមនៅទីនេះ <small>{{ kh(3 - left) }}/៣</small></h2>
-    <ol>
+    <ol class="cascade">
       <li v-for="(s, i) in steps" :key="i" :class="{ done: s.done }">
         <span class="n"><AppIcon v-if="s.done" name="check" :size="14" /><template v-else>{{ kh(i + 1) }}</template></span>
         <div>

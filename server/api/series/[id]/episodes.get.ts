@@ -8,7 +8,12 @@ export default defineEventHandler(async (event) => {
   const viewer = await currentViewer(event)
   const episodes = await apiEpisodes(Number(getRouterParam(event, 'id')), viewer?.id)
   if (!episodes) throw createError({ statusCode: 404, message: 'Series not found' })
-  setHeader(event, 'Cache-Control', viewer ? 'private, no-store' : 'private, max-age=30')
+  // Links are made for this browser (and viewer), so never shared through a cache
+  setHeader(event, 'Cache-Control', 'private, no-store')
+  const seriesId = Number(getRouterParam(event, 'id'))
+  // The storage address stays on the server: the player gets a short-lived /media link (utils/mediaGuard)
+  const guarded = (url: string | null, ep: number, kind: 'full' | 'preview', premium: boolean) =>
+    !url ? null : isPlaylist(url) ? url : mediaLink(event, { s: seriesId, e: ep, k: kind, ...(premium && viewer ? { v: viewer.id } : {}) })
   return episodes.map(e => ({
     number: e.number,
     title: e.title,
@@ -16,8 +21,10 @@ export default defineEventHandler(async (event) => {
     thumbnailUrl: e.thumbnailUrl,
     locked: e.locked,
     premium: e.premium ?? e.locked,
-    videoUrl: e.videoUrl,
+    videoUrl: guarded(e.videoUrl, e.number, 'full', !!(e.premium ?? e.locked)),
     hasSubtitles: !!e.subtitlesUrl,
-    preview: e.preview ?? null
+    preview: e.preview ? { url: guarded(e.preview.url, e.number, 'preview', false)!, seconds: e.preview.seconds } : null,
+    /** When these links stop working; the player asks for fresh ones before then */
+    linksExpireAt: Date.now() + TOKEN_MINUTES * 60_000
   }))
 })

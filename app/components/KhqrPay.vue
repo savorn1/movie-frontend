@@ -165,7 +165,12 @@ async function saveQr() {
   }
 }
 
+const { fly } = useCoinFlight()
+const badge = ref<HTMLElement>()
+
 function finish() {
+  // Bought coins fly from the success badge into the header as the screen closes
+  if (props.product.kind === 'COINS') fly(badge.value, gotCoins.value)
   emit('paid')
 }
 
@@ -199,7 +204,7 @@ onBeforeUnmount(() => {
         <div class="burst" aria-hidden="true">
           <span v-for="i in 12" :key="i" :style="{ '--i': i }" />
         </div>
-        <span class="badge" :class="product.kind.toLowerCase()">
+        <span ref="badge" class="badge" :class="product.kind.toLowerCase()">
           <AppIcon :name="product.kind === 'COINS' ? 'coin' : product.kind === 'VIP' ? 'crown' : 'check'" :size="34" />
         </span>
         <h2 id="pay-title">បង់ប្រាក់រួចរាល់!</h2>
@@ -217,7 +222,7 @@ onBeforeUnmount(() => {
         <p v-else-if="!order" class="muted">កំពុងរៀបចំ KHQR…</p>
 
         <template v-else-if="order.status === 'PENDING'">
-          <p class="amount">${{ order.amountUsd.toFixed(2) }}</p>
+          <p class="amount">${{ order.amountUsd.toFixed(2) }} <small class="khr">≈ {{ riel(order.amountUsd) }}</small></p>
           <!-- SVG made on our server from the KHQR text -->
           <div v-if="order.qrSvg && secondsLeft > 0" class="qr" role="img" aria-label="KHQR សម្រាប់ស្កេនបង់ប្រាក់" v-html="order.qrSvg" />
           <div v-if="secondsLeft > 0" class="timer" :class="{ urgent }">
@@ -291,6 +296,14 @@ h2 {
   margin: 0 32px;
   font-size: 18px;
   color: var(--text-strong);
+}
+
+/* Riel guide next to dollar prices */
+.khr {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .amount {

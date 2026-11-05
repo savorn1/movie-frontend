@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Movie } from '#shared/data/movies'
 
-defineProps<{ movie: Movie; eager?: boolean; progress?: { ep: number; total: number; value?: number } }>()
+const props = defineProps<{ movie: Movie; eager?: boolean; progress?: { ep: number; total: number; value?: number } }>()
 
 // Images that finished before hydration never fire `load`, so check `complete` on mount.
 const { hasNew } = useLibrary()
@@ -9,20 +9,31 @@ const hydrated = useHydrated()
 
 const img = ref<HTMLImageElement>()
 const loaded = ref(false)
+// Artwork that can't load: stop the shimmer and show the title on a tinted tile instead
+const failed = ref(false)
+const morph = usePosterMorph()
 onMounted(() => {
   if (img.value?.complete && img.value.naturalWidth) loaded.value = true
+  else if (img.value?.complete && img.value.currentSrc) failed.value = true
+  morph.claim(props.movie.id, img.value)
 })
+// Tapping a poster that opens the series page: it grows into that page's poster
+function onTap() {
+  if (!props.progress) morph.start(props.movie.id, img.value)
+}
 </script>
 
 <template>
-  <NuxtLink :to="progress ? `/watch/${movie.id}/${progress.ep}` : `/detail/${movie.id}`" class="poster">
-    <div class="cover" :class="{ shimmer: !loaded }">
+  <NuxtLink :to="progress ? `/watch/${movie.id}/${progress.ep}` : `/detail/${movie.id}`" class="poster" @click="onTap">
+    <div class="cover" :class="{ shimmer: !loaded && !failed, failed }">
+      <span v-if="failed" class="fallback" aria-hidden="true">{{ movie.title }}</span>
       <span v-if="movie.vip" class="vip-badge corner">VIP</span>
       <span v-if="hydrated && hasNew(movie.id)" class="new-badge">វគ្គថ្មី</span>
       <span v-if="!progress" class="note">{{ movie.episode }}</span>
       <img
         ref="img"
-        :src="movie.poster"
+        :src="imgSrc(movie.poster, 200)"
+        :srcset="imgSrcset(movie.poster, 200)"
         alt=""
         width="300"
         height="420"
@@ -30,6 +41,7 @@ onMounted(() => {
         :loading="eager ? 'eager' : 'lazy'"
         decoding="async"
         @load="loaded = true"
+        @error="failed = true"
       >
       <span class="play"><AppIcon name="play" :size="22" /></span>
       <div v-if="progress" class="progress" aria-hidden="true">
@@ -68,6 +80,23 @@ onMounted(() => {
   opacity: 1;
 }
 
+.cover.failed {
+  background: linear-gradient(160deg, var(--bg-elev-2), var(--bg-elev));
+}
+
+.fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .poster:hover img {
   transform: scale(1.05);
 }
@@ -101,7 +130,7 @@ onMounted(() => {
   border-radius: 5px;
   background: var(--signal);
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 20px;
 }

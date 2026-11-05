@@ -49,7 +49,7 @@ const poster = (s: Slot) => s.verticalUrl ?? s.posterUrl ?? find(s.seriesId)?.ve
 
     <section v-for="d in days" :key="d.label" class="day" :class="{ today: d.today }">
       <h2>{{ d.label }}<span v-if="d.today" class="live">ចេញថ្ងៃនេះ</span></h2>
-      <ul>
+      <ul class="cascade">
         <li v-for="s in d.slots" :key="`${s.seriesId}-${s.episode}`" class="slot">
           <NuxtLink :to="`/detail/${s.seriesId}`" class="slot-link">
             <img :src="poster(s)" alt="" width="54" height="72" loading="lazy">
@@ -144,7 +144,7 @@ ul {
   border-radius: 999px;
   background: var(--accent);
   color: var(--accent-ink);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 

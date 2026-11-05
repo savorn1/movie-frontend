@@ -9,6 +9,8 @@ export interface MiniState {
   /** Where the full player was */
   time: number
   muted: boolean
+  /** Where the full player was on screen, so the corner player can shrink out of it */
+  from?: { left: number; top: number; width: number; height: number }
 }
 
 export function useMiniPlayer() {

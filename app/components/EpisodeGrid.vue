@@ -72,6 +72,17 @@ const ranges = computed(() => {
 const rangeIndex = ref(Math.floor(((props.current ?? 1) - 1) / RANGE))
 watch(() => props.current, c => c && (rangeIndex.value = Math.floor((c - 1) / RANGE)))
 
+// Long series: type an episode number instead of hunting through the ranges (Khmer digits work too)
+const jumpTo = ref('')
+const jumpError = ref(false)
+function jump() {
+  const n = Number(jumpTo.value.trim().replace(/[០-៩]/g, d => String('០១២៣៤៥៦៧៨៩'.indexOf(d))))
+  jumpError.value = !Number.isInteger(n) || n < 1 || n > props.movie.episodes
+  if (jumpError.value) return
+  jumpTo.value = ''
+  navigateTo(`/watch/${props.movie.id}/${n}`)
+}
+
 const visible = computed(() => {
   const [a, b] = ranges.value[rangeIndex.value] ?? [1, props.movie.episodes]
   return Array.from({ length: b - a + 1 }, (_, i) => a + i)
@@ -80,6 +91,22 @@ const visible = computed(() => {
 
 <template>
   <div class="episodes" :class="{ compact }">
+    <form v-if="ranges.length > 1" class="jump" @submit.prevent="jump">
+      <label>
+        <span class="sr-only">ទៅវគ្គ</span>
+        <input
+          v-model="jumpTo"
+          type="text"
+          inputmode="numeric"
+          enterkeyhint="go"
+          :placeholder="`ទៅវគ្គ (១–${kh(movie.episodes)})`"
+          :aria-invalid="jumpError"
+          @input="jumpError = false"
+        >
+      </label>
+      <button type="submit" class="go" aria-label="ទៅ"><AppIcon name="chevron-right" :size="18" /></button>
+      <span v-if="jumpError" class="jump-error" role="alert">មានតែវគ្គ ១–{{ kh(movie.episodes) }}</span>
+    </form>
     <div v-if="ranges.length > 1" class="ranges" role="group" aria-label="ជួរវគ្គ">
       <button
         v-for="(r, i) in ranges"
@@ -136,13 +163,61 @@ const visible = computed(() => {
 </template>
 
 <style scoped>
+.jump {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.jump input {
+  width: 180px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+}
+
+.jump input[aria-invalid='true'] {
+  border-color: var(--signal);
+}
+
+.jump .go {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--bg-elev-2);
+  color: var(--text-strong);
+}
+
+.jump-error {
+  flex-basis: 100%;
+  color: var(--signal);
+  font-size: 13px;
+}
+
+/* Many ranges (200+ episodes) scroll sideways instead of widening the page */
 .ranges {
   display: flex;
   gap: 6px;
   margin-bottom: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ranges::-webkit-scrollbar {
+  display: none;
 }
 
 .ranges button {
+  flex-shrink: 0;
   min-height: 34px;
   padding: 0 14px;
   border-radius: 999px;
@@ -230,7 +305,7 @@ const visible = computed(() => {
   padding: 0;
   list-style: none;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .legend li {
@@ -318,6 +393,6 @@ const visible = computed(() => {
 
 .ep-peek span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 </style>

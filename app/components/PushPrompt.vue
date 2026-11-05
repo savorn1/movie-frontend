@@ -27,8 +27,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .prompt {
   position: fixed;
   left: 50%;
-  bottom: 32px;
+  bottom: calc(var(--float-base) + 8px + var(--float-lift));
   z-index: 95;
+  transition: bottom var(--dur) var(--ease-out);
   display: flex;
   gap: 12px;
   width: min(440px, calc(100% - 32px));
@@ -85,9 +86,4 @@ p {
   transform: translate(-50%, 12px);
 }
 
-@media (max-width: 1024px) {
-  .prompt {
-    bottom: calc(76px + env(safe-area-inset-bottom));
-  }
-}
 </style>

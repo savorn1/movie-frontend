@@ -216,8 +216,63 @@ function persist() {
 // ---------- Auto-advance ----------
 let tick: ReturnType<typeof setInterval> | undefined
 
-// Finished episodes count for today's missions and for invite rewards (signed-in viewers, real series)
 const { viewer: signedIn } = useViewer()
+
+// ---------- Protected video links (movie-api series) ----------
+// Links are short-lived and tied to this browser (server/utils/mediaGuard). When one stops working
+// (expired, or the server restarted) fetch fresh links and carry on from the same second.
+const { reload: reloadEpisodes, episodesOf: linksOf } = useSeriesEpisodes()
+let lastRefresh = 0
+async function onVideoError() {
+  const el = video.value
+  if (!el || !props.movie.remote || wallEp.value || Date.now() - lastRefresh < 15_000) return
+  lastRefresh = Date.now()
+  const at = current.value
+  const wasPlaying = !el.paused || playing.value
+  try {
+    await reloadEpisodes(props.movie.id)
+    await nextTick()
+    continueFrom = at
+    await load()
+    if (!wasPlaying) el.pause()
+  } catch {
+    // Offline: the normal error state stays
+  }
+}
+// Long pauses: refresh a couple of minutes before the links run out, so pressing Play just works
+let refreshTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  refreshTimer = setInterval(() => {
+    const expires = linksOf(props.movie.id)?.[0]?.linksExpireAt
+    if (props.movie.remote && expires && expires - Date.now() < 3 * 60_000 && video.value?.paused) {
+      reloadEpisodes(props.movie.id).catch(() => {})
+    }
+  }, 60_000)
+})
+onBeforeUnmount(() => clearInterval(refreshTimer))
+
+/*
+ * Watermark: the viewer's account code, faint, moving to a new spot every few seconds. It doesn't stop
+ * screen recording; it makes a leaked recording traceable to the account that made it.
+ */
+const WATERMARK_SPOTS = [
+  { top: '12%', left: '8%' },
+  { top: '18%', left: '62%' },
+  { top: '46%', left: '30%' },
+  { top: '58%', left: '70%' },
+  { top: '72%', left: '12%' },
+  { top: '34%', left: '82%' }
+]
+const watermarkSpot = ref(0)
+const watermark = computed(() => (props.movie.remote && signedIn.value ? `RF·${signedIn.value.id}` : ''))
+let watermarkTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  watermarkSpot.value = Math.floor(Math.random() * WATERMARK_SPOTS.length)
+  watermarkTimer = setInterval(() => (watermarkSpot.value = (watermarkSpot.value + 1 + Math.floor(Math.random() * 4)) % WATERMARK_SPOTS.length), 8000)
+})
+onBeforeUnmount(() => clearInterval(watermarkTimer))
+
+// Finished episodes count for today's missions and for invite rewards (signed-in viewers, real series)
 const missionState = useState<unknown[] | null>('missions', () => null)
 let reportedFor = ''
 function reportFinished() {
@@ -287,8 +342,31 @@ function goEp(n: number | null) {
   if (!n) return
   cancelCountdown()
   persist()
+  // The page (and this player) is rebuilt for the new episode; tell the next one which way to slide
+  slideNext.value = n > props.ep ? 'up' : 'down'
   navigateTo(`/watch/${props.movie.id}/${n}`)
 }
+
+/*
+ * Phones change episode by swiping (the bar has no prev/next buttons there). Teach it once: a few
+ * seconds into a viewer's first episode that has a next one, a "swipe up" hint shows and goes away.
+ */
+const swipeHint = ref(false)
+let swipeHintTimer: ReturnType<typeof setTimeout> | undefined
+function maybeSwipeHint() {
+  if (swipeHint.value || !nextEp.value || wallEp.value || preview.value) return
+  if (!window.matchMedia('(max-width: 768px) and (pointer: coarse)').matches) return
+  try {
+    if (localStorage.getItem('rf-swipe-hint')) return
+    localStorage.setItem('rf-swipe-hint', '1')
+  } catch {
+    return // Storage blocked: better no hint than one every episode
+  }
+  swipeHint.value = true
+  swipeHintTimer = setTimeout(() => (swipeHint.value = false), 3800)
+}
+watch(current, (t) => t > 3 && maybeSwipeHint())
+onBeforeUnmount(() => clearTimeout(swipeHintTimer))
 
 function replay() {
   ended.value = false
@@ -297,7 +375,25 @@ function replay() {
   play()
 }
 
-watch(() => props.ep, () => {
+// Next episode slides in from below, previous from above (like scrolling a feed). Changing episode
+// usually rebuilds the page, so the direction is handed over through shared state.
+const slideNext = useState<'up' | 'down' | null>('ep-slide', () => null)
+const epSlide = ref<'up' | 'down' | null>(null)
+let slideTimer: ReturnType<typeof setTimeout> | undefined
+function slide(dir: 'up' | 'down') {
+  if (reducedMotion()) return
+  epSlide.value = dir
+  clearTimeout(slideTimer)
+  slideTimer = setTimeout(() => (epSlide.value = null), 450)
+}
+onMounted(() => {
+  if (slideNext.value) slide(slideNext.value)
+  slideNext.value = null
+})
+watch(() => props.ep, (to, from) => {
+  // Same player, new episode (when the page isn't rebuilt)
+  if (from != null) slide(slideNext.value ?? (to > from ? 'up' : 'down'))
+  slideNext.value = null
   sheet.value?.close()
   load()
   loadReactions()
@@ -434,8 +530,16 @@ function liftCues() {
   const cues = video.value?.textTracks[0]?.cues
   for (const cue of Array.from(cues ?? [])) {
     const c = cue as VTTCue
-    c.snapToLines = true
-    c.line = prefs.value.captionPos === 'high' ? -7 : -4
+    if (pictureBottom.value !== null) {
+      // Upright phone with the info panel: keep subtitles on the picture, not in the band below it
+      c.snapToLines = false
+      c.lineAlign = 'end'
+      c.line = Math.max(0, pictureBottom.value - (prefs.value.captionPos === 'high' ? 14 : 3))
+    } else {
+      c.snapToLines = true
+      c.lineAlign = 'start'
+      c.line = prefs.value.captionPos === 'high' ? -7 : -4
+    }
   }
 }
 
@@ -487,6 +591,8 @@ function reveal() {
   controlsVisible.value = true
   clearTimeout(hideTimer)
   hideTimer = setTimeout(() => {
+    // Never fade out from under an open "More" panel
+    if (moreOpen.value) return reveal()
     if (playing.value) controlsVisible.value = false
   }, 2800)
 }
@@ -510,6 +616,7 @@ function onTouchEnd(e: TouchEvent) {
 
   // Swipe up = next episode, swipe down = previous
   if (Math.abs(dy) > 70 && Math.abs(dy) > Math.abs(dx) * 1.5) {
+    swipeHint.value = false
     goEp(dy < 0 ? nextEp.value : prevEp.value)
     return
   }
@@ -618,7 +725,11 @@ onBeforeUnmount(() => {
       src: source.value.src,
       type: source.value.type,
       time: el.currentTime,
-      muted: el.muted
+      muted: el.muted,
+      from: (() => {
+        const r = (wrap.value ?? el).getBoundingClientRect()
+        return { left: r.left, top: r.top, width: r.width, height: r.height }
+      })()
     })
   }
   hls?.destroy()
@@ -635,7 +746,72 @@ function openEpisodes() {
   sheet.value?.showModal()
 }
 
+/*
+ * Upright phones: a 16:9 picture leaves most of a tall screen black. The space under it shows the
+ * series, the next episode and the latest comments (opening a comments sheet), like short-drama apps.
+ * Only when there's real room: vertical videos fill the screen and get nothing.
+ */
+const infoTop = ref<number | null>(null)
+/** Where the picture ends, in % of the player's height (for subtitles), while the panel shows */
+const pictureBottom = ref<number | null>(null)
+let infoObserver: ResizeObserver | undefined
+function measureInfo() {
+  const el = wrap.value
+  if (!el || !window.matchMedia('(max-width: 768px) and (orientation: portrait)').matches) {
+    infoTop.value = null
+    pictureBottom.value = null
+    return
+  }
+  const v = video.value
+  const aspect = v?.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9
+  const videoH = Math.min(el.clientHeight, el.clientWidth / aspect)
+  const below = (el.clientHeight - videoH) / 2
+  infoTop.value = below >= 260 ? Math.round(el.clientHeight / 2 + videoH / 2 + 14) : null
+  pictureBottom.value = infoTop.value === null ? null : ((el.clientHeight / 2 + videoH / 2) / el.clientHeight) * 100
+}
+watch(pictureBottom, () => liftCues())
+onMounted(() => {
+  infoObserver = new ResizeObserver(measureInfo)
+  if (wrap.value) infoObserver.observe(wrap.value)
+  measureInfo()
+})
+onBeforeUnmount(() => infoObserver?.disconnect())
+
+const nextThumb = computed(() => (nextEp.value && linksOf(props.movie.id)?.find(e => e.number === nextEp.value)?.thumbnailUrl) || props.movie.poster)
+const nextIsLocked = computed(() => !!nextEp.value && !canWatch(props.movie, nextEp.value))
+
+interface CommentPeek { id: number; body: string; author: { displayName: string } }
+const topComments = ref<CommentPeek[]>([])
+const commentTotal = ref(0)
+async function loadTopComments() {
+  if (!import.meta.client || !props.movie.remote || infoTop.value === null) return
+  try {
+    const r = await $fetch<{ total: number; items: CommentPeek[] }>('/api/comments', { query: { series: props.movie.id, ep: props.ep } })
+    topComments.value = r.items.slice(0, 2)
+    commentTotal.value = r.total
+  } catch {
+    // Comments are extra
+  }
+}
+watch([() => props.ep, () => infoTop.value !== null], loadTopComments, { immediate: true })
+
+const commentsSheet = ref<HTMLDialogElement>()
+const commentsOpen = ref(false)
+async function openComments() {
+  commentsOpen.value = true
+  await nextTick()
+  commentsSheet.value?.showModal()
+}
+function onCommentsClosed() {
+  commentsOpen.value = false
+  loadTopComments()
+}
+
+/** The video fades in after an unlock instead of popping */
+const revealing = ref(false)
 function onUnlocked() {
+  revealing.value = true
+  setTimeout(() => (revealing.value = false), 700)
   wallEp.value = null
   if (preview.value) {
     // Same episode, now paid: the full video, from where the opening stopped
@@ -652,27 +828,35 @@ function onUnlocked() {
     class="player"
     :class="[{ 'hide-ui': !controlsVisible && playing, fullscreen: isFullscreen, pseudo: pseudoFullscreen }, captionClass]"
     @mousemove="reveal"
+    @contextmenu.prevent
   >
     <video
       ref="video"
       class="video"
+      :class="[{ revealing }, epSlide && `slide-${epSlide}`]"
       :poster="movie.banner"
       playsinline
       webkit-playsinline
       preload="metadata"
-      @loadedmetadata="onLoadedMetadata"
+      @loadedmetadata="onLoadedMetadata(); measureInfo()"
       @timeupdate="onTimeUpdate"
       @play="onPlay"
       @enterpictureinpicture="inPip = true"
       @leavepictureinpicture="inPip = false"
       @pause="playing = false; persist()"
       @ended="onEnded"
+      @error="onVideoError"
+      controlslist="nodownload noremoteplayback"
+      disableremoteplayback
+      draggable="false"
       @waiting="waiting = true"
       @playing="waiting = false"
       @volumechange="muted = video!.muted"
     >
       <track v-if="source.subtitles" kind="subtitles" srclang="km" label="ខ្មែរ" :src="source.subtitles" default @load="liftCues">
     </video>
+
+    <span v-if="watermark" class="watermark" :style="WATERMARK_SPOTS[watermarkSpot]" aria-hidden="true">{{ watermark }}</span>
 
     <!-- Tap / click surface for gestures -->
     <div
@@ -684,6 +868,13 @@ function onUnlocked() {
     />
 
     <div v-if="waiting && playing" class="spinner" aria-hidden="true" />
+
+    <Transition name="fade">
+      <div v-if="swipeHint" class="swipe-hint" role="status">
+        <span class="swipe-arrow" aria-hidden="true"><AppIcon name="chevron-up" :size="26" /></span>
+        អូសឡើងលើ ដើម្បីមើលវគ្គបន្ទាប់
+      </div>
+    </Transition>
 
     <Transition name="fade">
       <div v-if="skipHint" :key="skipHint.key" class="skip" :class="skipHint.side" aria-hidden="true">
@@ -700,6 +891,8 @@ function onUnlocked() {
         <strong>{{ movie.title }}</strong>
         <span>វគ្គ {{ kh(ep) }} / {{ kh(movie.episodes) }}</span>
       </div>
+      <!-- Upright phones with the info panel: Follow lives up here, next to the title it belongs to -->
+      <FollowButton v-if="infoTop !== null && !preview" :movie="movie" compact class="top-follow" />
     </div>
 
     <span v-if="preview && !preview.done" class="preview-pill" role="status">
@@ -768,7 +961,26 @@ function onUnlocked() {
       <span v-for="f in floating" :key="f.id" :style="{ right: `${f.x}px` }">{{ f.emoji }}</span>
     </div>
 
+    <!-- Upright phones: series, next episode and comments in the space under the picture -->
+    <div v-if="infoTop !== null && !wallEp" class="phone-info" :style="{ top: `${infoTop}px` }" @click.stop>
+      <button v-if="nextEp" type="button" class="pi-next" @click="goEp(nextEp)">
+        <img :src="nextThumb" alt="" loading="lazy" decoding="async">
+        <span class="pi-next-text">
+          <small>{{ nextIsLocked ? 'វគ្គបន្ទាប់ · VIP' : 'វគ្គបន្ទាប់' }}</small>
+          <strong>វគ្គ {{ kh(nextEp) }}</strong>
+        </span>
+        <AppIcon :name="nextIsLocked ? 'lock' : 'play'" :size="18" />
+      </button>
+      <button v-if="movie.remote" type="button" class="pi-comments" @click="openComments">
+        <span class="pi-c-head"><AppIcon name="comment" :size="16" /> មតិ {{ kh(commentTotal) }}<AppIcon name="chevron-right" :size="14" /></span>
+        <span v-for="c in topComments" :key="c.id" class="pi-c"><b>{{ c.author.displayName }}</b> {{ c.body }}</span>
+        <span v-if="!topComments.length" class="pi-c muted">ក្លាយជាអ្នកដំបូងដែលបញ្ចេញមតិ</span>
+      </button>
+    </div>
+
+    <Transition name="wall">
     <UnlockWall v-if="wallEp" :movie="movie" :ep="wallEp" :previewed="!!preview?.done" @unlocked="onUnlocked" />
+    </Transition>
 
     <!-- Bottom controls -->
     <div v-if="!wallEp" class="controls" @click.stop>
@@ -810,10 +1022,11 @@ function onUnlocked() {
         <button type="button" class="icon-btn" :aria-label="playing ? 'ផ្អាក' : 'ចាក់'" aria-keyshortcuts="k Space" @click="togglePlay">
           <AppIcon :name="playing ? 'pause' : 'play'" :size="22" />
         </button>
-        <button type="button" class="icon-btn" aria-label="វគ្គមុន" aria-keyshortcuts="p" :disabled="!prevEp" @click="goEp(prevEp)">
+        <!-- Phones swipe up/down to change episode, so these two make room for the rest there -->
+        <button type="button" class="icon-btn desk" aria-label="វគ្គមុន" aria-keyshortcuts="p" :disabled="!prevEp" @click="goEp(prevEp)">
           <AppIcon name="chevron-left" :size="22" />
         </button>
-        <button type="button" class="icon-btn" aria-label="វគ្គបន្ទាប់" aria-keyshortcuts="n" :disabled="!nextEp" @click="goEp(nextEp)">
+        <button type="button" class="icon-btn desk" aria-label="វគ្គបន្ទាប់" aria-keyshortcuts="n" :disabled="!nextEp" @click="goEp(nextEp)">
           <AppIcon name="chevron-right" :size="22" />
         </button>
         <span class="time">{{ fmt(current) }} / {{ fmt(duration) }}</span>
@@ -837,6 +1050,13 @@ function onUnlocked() {
             <button v-if="pipSupported" type="button" @click="togglePip">
               <AppIcon name="pip" :size="18" />{{ inPip ? 'បិទរូបភាពក្នុងរូបភាព' : 'រូបភាពក្នុងរូបភាព' }}
             </button>
+            <label class="sleep only-phone">
+              <AppIcon name="gauge" :size="18" />
+              <span>ល្បឿន</span>
+              <select :value="prefs.speed" @change="setSpeed(Number(($event.target as HTMLSelectElement).value))">
+                <option v-for="s in SPEEDS" :key="s" :value="s">{{ s }}×</option>
+              </select>
+            </label>
             <label class="sleep">
               <AppIcon name="moon" :size="18" />
               <span>ម៉ោងគេង</span>
@@ -881,7 +1101,7 @@ function onUnlocked() {
         >
           CC
         </button>
-        <label class="speed">
+        <label class="speed desk">
           <span class="sr-only">ល្បឿន</span>
           <select :value="prefs.speed" aria-keyshortcuts="< >" @change="setSpeed(Number(($event.target as HTMLSelectElement).value))">
             <option v-for="s in SPEEDS" :key="s" :value="s">{{ s }}×</option>
@@ -907,6 +1127,21 @@ function onUnlocked() {
 
     <!-- Hidden warm-up of the next episode -->
     <video v-if="preloadNext && nextSource" class="warm" :src="nextSource.src" preload="auto" muted aria-hidden="true" tabindex="-1" />
+
+    <!-- Comments sheet (phones: the page's comments are hidden under the full-screen player) -->
+    <dialog ref="commentsSheet" class="sheet comments-sheet" aria-label="មតិ" @click.self="commentsSheet?.close()" @close="onCommentsClosed">
+      <div class="sheet-body">
+        <div class="grabber" aria-hidden="true" />
+        <div class="sheet-head">
+          <h2 class="sr-only">មតិ · វគ្គ {{ kh(ep) }}</h2>
+          <span />
+          <button type="button" class="icon-btn" aria-label="បិទ" @click="commentsSheet?.close()">
+            <AppIcon name="close" :size="20" />
+          </button>
+        </div>
+        <EpisodeComments v-if="commentsOpen" :series-id="movie.id" :ep="ep" @count="commentTotal = $event" />
+      </div>
+    </dialog>
 
     <!-- Episode sheet (phones) -->
     <dialog ref="sheet" class="sheet" aria-labelledby="sheet-title" @click.self="sheet?.close()">
@@ -998,8 +1233,14 @@ function onUnlocked() {
 
 .top-title {
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-width: 0;
+}
+
+.top-follow {
+  flex: none;
+  color: #fff;
 }
 
 .top-title strong {
@@ -1381,7 +1622,7 @@ function onUnlocked() {
   width: 100%;
   padding: 4px 0;
   color: rgba(255, 255, 255, 0.65);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .captions-set label {
@@ -1517,8 +1758,150 @@ function onUnlocked() {
   }
 }
 
-/* ---- Phones: vertical, immersive, edge to edge ---- */
-@media (max-width: 768px) {
+.only-phone {
+  display: none;
+}
+
+/* ---- Space under the picture on upright phones ---- */
+.phone-info {
+  position: absolute;
+  left: 16px;
+  right: 68px; /* the reaction rail */
+  bottom: calc(112px + env(safe-area-inset-bottom));
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  /* Its height is the free space; shorter screens drop the second comment line (below) */
+  container-type: size;
+  animation: rise var(--dur-slow) var(--ease-out);
+}
+
+.pi-next,
+.pi-comments {
+  flex: none;
+  width: 100%;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  text-align: left;
+}
+
+.pi-next {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 14px 5px 5px;
+}
+
+.pi-next img {
+  width: 68px;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #222;
+}
+
+.pi-next-text {
+  display: grid;
+  flex: 1;
+}
+
+.pi-next-text small {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+}
+
+.pi-comments {
+  display: grid;
+  gap: 2px;
+  min-height: 44px;
+  padding: 8px 14px;
+}
+
+/* Not enough room for two comment lines: show one rather than cutting a line in half */
+@container (max-height: 150px) {
+  .pi-c + .pi-c {
+    display: none;
+  }
+}
+
+.pi-c-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pi-c {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pi-c b {
+  color: #fff;
+  font-weight: 600;
+}
+
+.pi-c.muted {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.comments-sheet {
+  max-height: 82dvh;
+}
+
+.comments-sheet .sheet-body {
+  max-height: 82dvh;
+  overflow-y: auto;
+}
+
+/* One-time "swipe up for the next episode" (phones), in the dark band above the picture */
+.swipe-hint {
+  position: absolute;
+  left: 50%;
+  top: 20%;
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 10px 18px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  background: rgba(40, 40, 46, 0.82);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.swipe-arrow {
+  animation: swipe-nudge 1.1s var(--ease-out) infinite;
+}
+
+@keyframes swipe-nudge {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+/* ---- Phones (upright or turned sideways): immersive, edge to edge ---- */
+@media (max-width: 768px), (max-height: 500px) and (pointer: coarse) {
   .player {
     position: fixed;
     inset: 0;
@@ -1541,8 +1924,28 @@ function onUnlocked() {
     display: grid;
   }
 
+  .more-panel .only-phone {
+    display: flex;
+  }
+
+  .time {
+    font-size: 12px;
+  }
+
   .controls {
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
+
+/* 320 px phones: a little tighter so full screen still fits */
+@media (max-width: 359px) {
+  .controls {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .bar .icon-btn {
+    min-width: 40px;
   }
 }
 .preview-pill {
@@ -1663,5 +2066,72 @@ function onUnlocked() {
   .floaters {
     display: none;
   }
+}
+
+/* Unlocked: the picture fades in; changing episode: it slides in like a feed */
+.video.revealing {
+  animation: reveal 600ms var(--ease-out);
+}
+
+.video.slide-up {
+  animation: slide-from-below var(--dur-slow) var(--ease-out);
+}
+
+.video.slide-down {
+  animation: slide-from-above var(--dur-slow) var(--ease-out);
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes slide-from-below {
+  from {
+    opacity: 0;
+    transform: translateY(18%);
+  }
+}
+
+@keyframes slide-from-above {
+  from {
+    opacity: 0;
+    transform: translateY(-18%);
+  }
+}
+
+/* The unlock screen leaves with a fade and its blur easing off */
+.wall-leave-active {
+  transition: opacity var(--dur-slow) var(--ease-in), backdrop-filter var(--dur-slow) var(--ease-in);
+}
+
+.wall-leave-to {
+  opacity: 0;
+  backdrop-filter: blur(0);
+}
+
+.wall-enter-active {
+  transition: opacity var(--dur) var(--ease-out);
+}
+
+.wall-enter-from {
+  opacity: 0;
+}
+
+/* Faint, moving account code over the picture (see the script) */
+.watermark {
+  position: absolute;
+  z-index: 2;
+  color: rgba(255, 255, 255, 0.16);
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  user-select: none;
+  transition: top 1.2s var(--ease-out), left 1.2s var(--ease-out);
 }
 </style>

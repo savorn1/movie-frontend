@@ -28,8 +28,9 @@ function runAction(id: number, run: () => void) {
 .toasts {
   position: fixed;
   left: 50%;
-  bottom: 32px;
+  bottom: calc(var(--float-base) + 8px + var(--float-lift));
   z-index: 90;
+  transition: bottom var(--dur) var(--ease-out);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -112,9 +113,4 @@ function runAction(id: number, run: () => void) {
   transform: translateY(10px);
 }
 
-@media (max-width: 1024px) {
-  .toasts {
-    bottom: calc(76px + env(safe-area-inset-bottom));
-  }
-}
 </style>

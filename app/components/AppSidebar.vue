@@ -112,7 +112,7 @@ nav {
   border-radius: 999px;
   background: var(--signal);
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
   text-align: center;
   line-height: 20px;
 }

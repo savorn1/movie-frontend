@@ -55,11 +55,17 @@ const base = computed(() => (wallet.value ? (todayDot.value === 7 ? wallet.value
 const bonus = computed(() => wallet.value?.firstTopUpBonusPercent ?? 0)
 const withBonus = (coins: number) => coins + Math.floor((coins * bonus.value) / 100)
 
-async function onCheckIn() {
+const { fly } = useCoinFlight()
+const justCheckedIn = ref(false)
+
+async function onCheckIn(e: MouseEvent) {
+  const button = e.currentTarget as HTMLElement
   busy.value = true
   try {
     const before = wallet.value?.coins ?? 0
+    fly(button, wallet.value?.checkIn.nextReward ?? 5)
     const w = await checkIn()
+    justCheckedIn.value = true
     success(`ចុះឈ្មោះប្រចាំថ្ងៃ · +${kh(w.coins - before)} កាក់ · ${kh(w.checkIn.streak)} ថ្ងៃជាប់គ្នា`)
   } catch (err) {
     fail(paymentError(err))
@@ -84,6 +90,7 @@ const what = (o: OrderRow) =>
 </script>
 
 <template>
+  <Transition name="swap" mode="out-in">
   <section v-if="viewer && wallet" id="wallet" class="wallet" aria-labelledby="wallet-title">
     <h2 id="wallet-title">កាបូប</h2>
 
@@ -108,7 +115,12 @@ const what = (o: OrderRow) =>
         <strong>ចុះឈ្មោះប្រចាំថ្ងៃ</strong>
         <span class="sub">មករាល់ថ្ងៃ ទទួលកាក់ឥតគិតថ្លៃ · ថ្ងៃទី ៧ ទទួលទ្វេដង</span>
         <ol class="week" :aria-label="`${kh(streakDots)} ថ្ងៃជាប់គ្នា ក្នុងសប្តាហ៍នេះ`">
-          <li v-for="d in 7" :key="d" class="day" :class="{ on: d <= streakDots, today: d === todayDot && !wallet.checkIn.doneToday, big: d === 7 }">
+          <li
+            v-for="d in 7"
+            :key="d"
+            class="day"
+            :class="{ on: d <= streakDots, today: d === todayDot && !wallet.checkIn.doneToday, big: d === 7, just: justCheckedIn && d === streakDots }"
+          >
             <span class="ring">
               <AppIcon v-if="d <= streakDots" name="check" :size="14" />
               <AppIcon v-else-if="d === 7" name="gift" :size="14" />
@@ -137,6 +149,7 @@ const what = (o: OrderRow) =>
         <strong><AppIcon name="coin" :size="18" /> {{ kh(p.coins) }}</strong>
         <small v-if="bonus" class="extra">+{{ kh(withBonus(p.coins) - p.coins) }} បន្ថែម</small>
         <span>${{ p.price.toFixed(2) }}</span>
+        <small class="khr">≈ {{ riel(p.price) }}</small>
       </button>
     </div>
 
@@ -168,11 +181,14 @@ const what = (o: OrderRow) =>
     </div>
     <span class="sk tall shimmer" />
   </section>
+  </Transition>
 </template>
 
 <style scoped>
 .wallet {
   display: grid;
+  /* Never wider than the screen, whatever a row inside wants */
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -240,7 +256,11 @@ h2 {
   justify-items: center;
   gap: 2px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
+}
+
+.day small {
+  font-size: inherit; /* <small> would shrink the Khmer day name below 13px */
 }
 
 .ring {
@@ -270,6 +290,64 @@ h2 {
   color: #ffb800;
 }
 
+/* Today's circle fills with a sweep right after checking in; day 7 bursts */
+.day.just .ring {
+  animation: pop-in var(--dur-slow) var(--ease-spring);
+}
+
+.day.just .ring::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--sweep), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 17px, #000 18px);
+  mask: radial-gradient(circle, transparent 17px, #000 18px);
+  animation: sweep 500ms var(--ease-out) forwards;
+}
+
+.day.big.just .ring::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  border: 2px solid #ffb800;
+  animation: ring-burst 600ms var(--ease-out) forwards;
+}
+
+.day.big.just small {
+  display: inline-block;
+  animation: pop-in 450ms var(--ease-spring) 200ms both;
+}
+
+.ring {
+  position: relative;
+}
+
+@property --sweep {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes sweep {
+  to {
+    --sweep: 360deg;
+    opacity: 0;
+  }
+}
+
+@keyframes ring-burst {
+  from {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
 .day.big.on .ring {
   background: linear-gradient(135deg, #ffe26a, #ffb800);
   color: #3a2600;
@@ -293,7 +371,7 @@ h2 {
 
 .extra {
   color: #2fbf71;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -317,6 +395,7 @@ h2 {
   display: grid;
   justify-items: center;
   gap: 4px;
+  min-width: 0;
   min-height: 72px;
   padding: 10px;
   border: 1px solid var(--border);
@@ -325,6 +404,14 @@ h2 {
   color: var(--text);
   font: inherit;
   cursor: pointer;
+}
+
+/* Riel guide next to dollar prices */
+.khr {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .pack strong {
@@ -369,5 +456,27 @@ h2 {
 .status.expired,
 .status.cancelled {
   color: var(--text-muted);
+}
+
+/* 320 px phones: three packs still fit side by side */
+@media (max-width: 359px) {
+  .packs {
+    gap: 6px;
+  }
+
+  .pack {
+    padding: 8px 4px;
+    font-size: 13px;
+  }
+
+  /* Seven check-in circles in one row */
+  .week {
+    gap: 4px;
+  }
+
+  .ring {
+    width: 30px;
+    height: 30px;
+  }
 }
 </style>

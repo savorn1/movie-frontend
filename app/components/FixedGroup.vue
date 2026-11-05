@@ -23,7 +23,8 @@ function toTop() {
 .to-top {
   position: fixed;
   right: 24px;
-  bottom: 40px;
+  bottom: calc(var(--float-base) + 16px + var(--float-lift));
+  transition: bottom var(--dur) var(--ease-out);
   z-index: 55;
   display: grid;
   place-items: center;
@@ -54,7 +55,7 @@ function toTop() {
 @media (max-width: 1024px) {
   .to-top {
     right: 16px;
-    bottom: calc(76px + env(safe-area-inset-bottom));
+    bottom: calc(var(--float-base) + var(--float-lift));
   }
 }
 </style>
