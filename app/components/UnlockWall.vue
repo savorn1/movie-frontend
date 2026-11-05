@@ -2,11 +2,12 @@
 import type { Movie } from '#shared/data/movies'
 import type { Product } from './KhqrPay.vue'
 
-const props = defineProps<{ movie: Movie; ep: number }>()
+// `previewed`: the viewer just watched the free opening of this episode (the wall sits over its last frame)
+const props = defineProps<{ movie: Movie; ep: number; previewed?: boolean }>()
 const emit = defineEmits<{ unlocked: [] }>()
 
 const { unlockSeries } = useLibrary()
-const { show } = useToast()
+const { success, fail } = useToast()
 const { prices, planPrice } = useSite()
 const { viewer, enabled: accountsOn } = useViewer()
 const { wallet, refresh: refreshWallet, unlockEpisode } = useWallet()
@@ -16,7 +17,9 @@ const route = useRoute()
 const isDev = import.meta.dev
 const busy = ref(false)
 const error = ref('')
-const paying = ref<{ product: Product; label: string } | null>(null)
+const paying = ref<{ product: Product; label: string; doneLabel?: string } | null>(null)
+/** Coins are being bought to unlock this episode: unlock it as soon as they arrive */
+const thenUnlock = ref(false)
 
 /*
  * Episodes of movie-api series are sold for real: one episode with coins, the whole series or VIP with
@@ -26,8 +29,15 @@ const paying = ref<{ product: Product; label: string } | null>(null)
 const sells = computed(() => !!props.movie.remote && accountsOn.value)
 const episodeCoins = computed(() => wallet.value?.episodeCoins ?? 20)
 const enoughCoins = computed(() => (wallet.value?.coins ?? 0) >= episodeCoins.value)
-const smallestPack = computed(() => prices.value.coinPacks[0]?.price ?? 0.99)
+// The smallest pack that covers what's missing for this episode
+const topUp = computed(() => {
+  const missing = episodeCoins.value - (wallet.value?.coins ?? 0)
+  const packs = prices.value.coinPacks
+  return packs.find(p => p.coins >= missing) ?? packs[packs.length - 1] ?? { coins: 100 as const, price: 0.99 }
+})
+const bonusPercent = computed(() => wallet.value?.firstTopUpBonusPercent ?? 0)
 const loginLink = computed(() => ({ path: '/login', query: { next: route.fullPath } }))
+const vipLink = computed(() => ({ path: '/vip', query: { next: route.fullPath } }))
 
 onMounted(() => {
   if (viewer.value) refreshWallet()
@@ -38,7 +48,7 @@ async function opened(message: string) {
   await reload(props.movie.id)
   // Let the player see the new links before it tries again
   await nextTick()
-  show(message)
+  success(message)
   emit('unlocked')
 }
 
@@ -50,13 +60,20 @@ async function payWithCoins() {
     await opened(r.charged ? `បានដោះសោវគ្គ ${kh(props.ep)} · −${kh(r.charged)} កាក់` : `វគ្គ ${kh(props.ep)} បានដោះសោរួចហើយ`)
   } catch (err) {
     error.value = paymentError(err)
+    haptic('error')
   } finally {
     busy.value = false
   }
 }
 
-function buy(product: Product, label: string) {
-  paying.value = { product, label }
+function buy(product: Product, label: string, doneLabel?: string) {
+  paying.value = { product, label, doneLabel }
+}
+
+/** One step for viewers short of coins: buy the pack that covers it, then unlock this episode with it */
+function topUpAndUnlock() {
+  thenUnlock.value = true
+  buy({ kind: 'COINS', coins: topUp.value.coins }, `ទិញកាក់ ${kh(topUp.value.coins)} ហើយដោះសោវគ្គ ${kh(props.ep)}`, `ដោះសោ និងមើលវគ្គ ${kh(props.ep)}`)
 }
 
 async function onPaid() {
@@ -64,15 +81,25 @@ async function onPaid() {
   paying.value = null
   await refreshWallet()
   if (kind === 'COINS') {
-    show('បានបញ្ចូលកាក់')
+    if (thenUnlock.value && enoughCoins.value) {
+      thenUnlock.value = false
+      await payWithCoins()
+    } else {
+      success('បានបញ្ចូលកាក់')
+    }
     return
   }
   await opened(kind === 'VIP' ? 'អ្នកជាសមាជិក VIP ហើយ' : `បានដោះសោ “${props.movie.title}”`)
 }
 
+function onPayClosed() {
+  paying.value = null
+  thenUnlock.value = false
+}
+
 function simulateUnlock() {
   unlockSeries(props.movie.id)
-  show(`បានដោះសោ “${props.movie.title}”`)
+  success(`បានដោះសោ “${props.movie.title}”`)
   emit('unlocked')
 }
 </script>
@@ -81,8 +108,11 @@ function simulateUnlock() {
   <div class="wall" role="dialog" aria-modal="false" aria-labelledby="wall-title" @click.stop>
     <div class="card">
       <span class="lock"><AppIcon name="lock" :size="22" solid /></span>
-      <h2 id="wall-title">វគ្គ {{ kh(ep) }} ជាវគ្គ VIP</h2>
-      <p class="lead">អ្នកបានមើលវគ្គឥតគិតថ្លៃ ១–{{ kh(movie.freeEpisodes) }} ហើយ។ ដោះសោដើម្បីដឹងរឿងបន្ត។</p>
+      <h2 id="wall-title">{{ previewed ? 'ចង់ដឹងរឿងបន្តទេ?' : `វគ្គ ${kh(ep)} ជាវគ្គ VIP` }}</h2>
+      <p class="lead">
+        <template v-if="previewed">អ្នកបានមើលផ្នែកដំបូងនៃវគ្គ {{ kh(ep) }} ហើយ។ ដោះសោដើម្បីមើលបន្តពីត្រង់នេះ។</template>
+        <template v-else>អ្នកបានមើលវគ្គឥតគិតថ្លៃ ១–{{ kh(movie.freeEpisodes) }} ហើយ។ ដោះសោដើម្បីដឹងរឿងបន្ត។</template>
+      </p>
 
       <template v-if="sells && !viewer">
         <NuxtLink :to="loginLink" class="btn btn-primary signin">ចូលគណនីដើម្បីដោះសោ</NuxtLink>
@@ -90,13 +120,21 @@ function simulateUnlock() {
       </template>
 
       <div v-else-if="sells" class="options">
-        <button type="button" class="option primary" :disabled="busy" @click="enoughCoins ? payWithCoins() : buy({ kind: 'COINS', coins: 100 }, 'ទិញកាក់ ១០០')">
+        <button v-if="enoughCoins" type="button" class="option primary" :disabled="busy" @click="payWithCoins">
           <span class="o-head">
             <strong>ដោះសោវគ្គនេះ</strong>
             <span class="price"><AppIcon name="coin" :size="18" /> {{ kh(episodeCoins) }}</span>
           </span>
+          <span class="o-sub">អ្នកមាន {{ kh(wallet?.coins ?? 0) }} កាក់ · នៅសល់ {{ kh((wallet?.coins ?? 0) - episodeCoins) }} ក្រោយដោះសោ</span>
+        </button>
+        <button v-else type="button" class="option primary" :disabled="busy || !wallet?.paymentsOn" @click="topUpAndUnlock">
+          <span v-if="bonusPercent" class="tag bonus"><AppIcon name="gift" :size="13" /> +{{ kh(bonusPercent) }}% លើកដំបូង</span>
+          <span class="o-head">
+            <strong>ទិញកាក់ {{ kh(topUp.coins) }} ហើយដោះសោ</strong>
+            <span class="price">${{ topUp.price.toFixed(2) }}</span>
+          </span>
           <span class="o-sub">
-            អ្នកមាន {{ kh(wallet?.coins ?? 0) }} កាក់<template v-if="!enoughCoins"> · ចុចដើម្បីទិញកាក់ ១០០ (${{ smallestPack }})</template>
+            វគ្គនេះ {{ kh(episodeCoins) }} កាក់ · អ្នកមាន {{ kh(wallet?.coins ?? 0) }}<template v-if="bonusPercent"> · ទទួលបាន {{ kh(topUp.coins + Math.floor(topUp.coins * bonusPercent / 100)) }} កាក់</template>
           </span>
         </button>
         <button type="button" class="option" @click="buy({ kind: 'SERIES', seriesId: movie.id }, `ដោះសោ “${movie.title}”`)">
@@ -106,12 +144,13 @@ function simulateUnlock() {
           </span>
           <span class="o-sub">គ្រប់វគ្គទាំង {{ kh(movie.episodes) }} · បង់ម្តងតាម KHQR</span>
         </button>
-        <NuxtLink to="/vip" class="option">
+        <NuxtLink :to="vipLink" class="option vip">
+          <span class="tag">តម្លៃល្អបំផុត</span>
           <span class="o-head">
-            <strong>VIP គ្រប់រឿង</strong>
+            <strong><AppIcon name="crown" :size="16" /> VIP គ្រប់រឿង</strong>
             <span class="price">${{ planPrice(1) }}<small>/ខែ</small></span>
           </span>
-          <span class="o-sub">ដោះសោរាល់រឿង VIP · Full HD</span>
+          <span class="o-sub">ដោះសោរាល់រឿង VIP · Full HD · ថ្លៃជាងវគ្គមួយៗ ពេលមើលច្រើន</span>
         </NuxtLink>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
       </div>
@@ -135,7 +174,14 @@ function simulateUnlock() {
       </NuxtLink>
     </div>
 
-    <KhqrPay v-if="paying" :product="paying.product" :label="paying.label" @paid="onPaid" @close="paying = null" />
+    <KhqrPay
+      v-if="paying"
+      :product="paying.product"
+      :label="paying.label"
+      :done-label="paying.doneLabel ?? `មើលវគ្គ ${kh(ep)}`"
+      @paid="onPaid"
+      @close="onPayClosed"
+    />
   </div>
 </template>
 
@@ -214,6 +260,40 @@ h2 {
 .option.primary {
   border-color: var(--accent);
   background: rgba(255, 209, 1, 0.12);
+}
+
+.option {
+  position: relative;
+}
+
+.option.vip {
+  border-color: rgba(255, 196, 0, 0.6);
+}
+
+.o-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tag {
+  position: absolute;
+  top: -9px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ffe26a, #ffb800);
+  color: #3a2600;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tag.bonus {
+  background: #2fbf71;
+  color: #fff;
 }
 
 .o-head {

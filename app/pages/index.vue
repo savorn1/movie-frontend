@@ -3,7 +3,7 @@ const { byCategory, featured, hotNow, latest } = useCatalog()
 
 usePageMeta({})
 
-const { continueWatching } = useLibrary()
+const { continueWatching, newForYou } = useLibrary()
 const top10 = computed(() => hotNow.value.slice(0, 10))
 const forYou = useForYou()
 const becauseYouWatched = useBecauseYouWatched()
@@ -24,6 +24,16 @@ const sections = computed(() => [
 
     <div class="content">
       <ClientOnly>
+        <GenrePicker />
+        <MissionsCard compact class="missions-row" />
+        <MovieRow
+          v-if="newForYou.length"
+          title="វគ្គថ្មីសម្រាប់អ្នក"
+          more="/library"
+          :items="newForYou"
+          small
+          :col="[168, 124]"
+        />
         <MovieRow
           v-if="continueWatching.length"
           title="បន្តមើល"
@@ -82,5 +92,8 @@ const sections = computed(() => [
   .content {
     padding: 16px 16px 0;
   }
+}
+.missions-row {
+  margin-bottom: 24px;
 }
 </style>

@@ -39,15 +39,26 @@ const dialog = ref<HTMLDialogElement>()
 const selected = ref<Plan | null>(null)
 
 const { viewer, enabled: accountsOn } = useViewer()
-const { refresh: refreshWallet } = useWallet()
-const { show } = useToast()
+const { wallet, refresh: refreshWallet } = useWallet()
+const { success } = useToast()
 const buying = ref<Plan | null>(null)
+const route = useRoute()
+// Came from an unlock wall: go back to that episode once VIP is bought
+const next = computed(() => localPath(route.query.next))
+onMounted(() => viewer.value && refreshWallet())
+const statusLine = computed(() => {
+  if (!viewer.value) return 'ស្ថានភាព៖ ភ្ញៀវ · មិនទាន់មាន VIP'
+  if (wallet.value?.vipActive && wallet.value.vipUntil) {
+    return `ស្ថានភាព៖ VIP សកម្ម ដល់ ${new Date(wallet.value.vipUntil).toLocaleDateString('en-GB')} · ទិញបន្ថែមនឹងបន្តពីថ្ងៃនោះ`
+  }
+  return `ស្ថានភាព៖ ${viewer.value.displayName} · មិនទាន់មាន VIP`
+})
 
 // With accounts on, plans are bought with KHQR and added to the account; signed-out viewers sign in
 // first. Without accounts (sample setup) the dialog explains payments aren't available.
 async function choose(p: Plan) {
   if (accountsOn.value) {
-    if (!viewer.value) return navigateTo({ path: '/login', query: { next: '/vip' } })
+    if (!viewer.value) return navigateTo({ path: '/login', query: { next: route.fullPath } })
     buying.value = p
     return
   }
@@ -59,7 +70,8 @@ async function onPaid() {
   const plan = buying.value
   buying.value = null
   await refreshWallet()
-  show(`អ្នកជាសមាជិក ${plan?.name ?? 'VIP'} ហើយ · រីករាយទស្សនា!`)
+  success(`អ្នកជាសមាជិក ${plan?.name ?? 'VIP'} ហើយ · រីករាយទស្សនា!`)
+  if (next.value) await navigateTo(next.value)
 }
 
 const close = () => dialog.value?.close()
@@ -71,7 +83,10 @@ const close = () => dialog.value?.close()
       <AppIcon name="crown" :size="40" class="crown" />
       <h1 class="display">សមាជិក VIP</h1>
       <p>ដោះសោគ្រប់វគ្គ VIP · កម្រិតរូបភាព Full HD / 4K · ដំណើរការភ្លាមៗ</p>
-      <span class="status">ស្ថានភាព៖ ភ្ញៀវ · មិនទាន់មាន VIP</span>
+      <ClientOnly>
+        <span class="status" :class="{ active: wallet?.vipActive }">{{ statusLine }}</span>
+        <template #fallback><span class="status">&nbsp;</span></template>
+      </ClientOnly>
     </section>
 
     <section class="plans">
@@ -104,6 +119,7 @@ const close = () => dialog.value?.close()
       v-if="buying"
       :product="{ kind: 'VIP', months: buying.months }"
       :label="buying.name"
+      :done-label="next ? 'ត្រឡប់ទៅមើលបន្ត' : 'រីករាយទស្សនា'"
       @paid="onPaid"
       @close="buying = null"
     />
@@ -152,6 +168,12 @@ const close = () => dialog.value?.close()
 .hero p {
   margin: 0 0 16px;
   color: rgba(255, 255, 255, 0.75);
+}
+
+.status.active {
+  background: linear-gradient(135deg, #ffe26a, #ffb800);
+  color: #3a2600;
+  font-weight: 700;
 }
 
 .status {

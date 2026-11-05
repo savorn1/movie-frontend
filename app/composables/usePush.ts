@@ -10,6 +10,28 @@ export function usePush() {
   const supported = () =>
     import.meta.client && !!key && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 
+  /**
+   * Our own short explanation shown before the browser's permission prompt. A browser "Block" is
+   * close to permanent, so the real prompt only appears once the viewer said yes here.
+   */
+  const softPrompt = useState<{ title: string; resolve: (yes: boolean) => void } | null>('push-soft-prompt', () => null)
+
+  /** Needs our explanation first: notifications possible, and the browser hasn't been asked yet */
+  const needsAsking = () => supported() && Notification.permission === 'default'
+
+  function explain(title: string): Promise<boolean> {
+    softPrompt.value?.resolve(false)
+    return new Promise(resolve => {
+      softPrompt.value = {
+        title,
+        resolve: (yes) => {
+          softPrompt.value = null
+          resolve(yes)
+        }
+      }
+    })
+  }
+
   /** This browser's subscription, created when `ask` (shows the permission prompt) */
   async function subscription(ask: boolean): Promise<PushSubscription | null> {
     if (!supported()) return null
@@ -38,7 +60,7 @@ export function usePush() {
     }
   }
 
-  return { supported, setFollow, following }
+  return { supported, setFollow, following, softPrompt, needsAsking, explain }
 }
 
 function urlBase64ToUint8Array(base64: string) {

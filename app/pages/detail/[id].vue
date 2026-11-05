@@ -10,7 +10,15 @@ if (!movie.value) {
 }
 
 const { lastEpisode, markSeen } = useLibrary()
-onMounted(() => markSeen(movie.value!.id))
+// movie-api series: this viewer's episodes (what they've unlocked, titles and thumbnails for the grid)
+const { reload: reloadEpisodes } = useSeriesEpisodes()
+const { viewer } = useViewer()
+const loadEpisodes = () => movie.value?.remote && reloadEpisodes(movie.value.id).catch(() => {})
+onMounted(() => {
+  markSeen(movie.value!.id)
+  loadEpisodes()
+})
+watch(() => viewer.value?.id, loadEpisodes)
 const { share } = useShare()
 const ambient = useAmbientColor(() => movie.value?.poster)
 

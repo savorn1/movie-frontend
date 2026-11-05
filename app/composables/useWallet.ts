@@ -6,6 +6,8 @@ export interface Wallet {
   episodeCoins: number
   /** KHQR payments are set up on the server */
   paymentsOn: boolean
+  /** Extra coins (percent) on this viewer's first coin pack; 0 once they've paid for anything */
+  firstTopUpBonusPercent: number
 }
 
 /** The signed-in viewer's coins and VIP time, shared by the Me page and the unlock wall */

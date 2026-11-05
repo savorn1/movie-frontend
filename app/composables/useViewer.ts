@@ -83,10 +83,13 @@ export function useViewer() {
   /** True once the first /api/auth/me answered */
   const known = useState('viewer-known', () => false)
   const methods = useState<SignInMethods>('viewer-methods', () => ({ telegram: false, google: false }))
+  /** This browser came through a friend's invite link (shown on the sign-up page) */
+  const invited = useState('viewer-invited', () => false)
 
   async function refreshViewer() {
     try {
-      const me = await $fetch<{ enabled: boolean; methods: SignInMethods; viewer: ViewerAccount | null }>('/api/auth/me')
+      const me = await $fetch<{ enabled: boolean; methods: SignInMethods; invited?: boolean; viewer: ViewerAccount | null }>('/api/auth/me')
+      invited.value = !!me.invited
       enabled.value = me.enabled
       methods.value = me.methods
       viewer.value = me.viewer
@@ -143,5 +146,5 @@ export function useViewer() {
     await logout()
   }
 
-  return { viewer, enabled, known, methods, refreshViewer, login, register, signInWithTelegram, googleUrl, changePassword, logout, deleteAccount }
+  return { viewer, enabled, known, methods, invited, refreshViewer, login, register, signInWithTelegram, googleUrl, changePassword, logout, deleteAccount }
 }

@@ -11,6 +11,21 @@ const { active: saveData } = useDataSaver()
 const hydrated = useHydrated()
 const bannerOf = (m: Movie) => (hydrated.value && saveData.value ? m.banner.replace('/1600/700', '/800/350') : m.banner)
 
+// A shimmer until the current banner has arrived (slow connections otherwise see a flat dark box)
+const loadedBanners = ref(new Set<string>())
+const bannerReady = computed(() => loadedBanners.value.has(bannerOf(current.value)))
+function preloadBanner() {
+  const url = bannerOf(current.value)
+  if (loadedBanners.value.has(url)) return
+  const img = new Image()
+  const done = () => (loadedBanners.value = new Set([...loadedBanners.value, url]))
+  img.onload = done
+  img.onerror = done
+  img.src = url
+}
+onMounted(preloadBanner)
+watch(() => bannerOf(current.value), () => import.meta.client && preloadBanner())
+
 // The page around the hero takes on the current poster's color
 const ambient = useAmbientColor(() => current.value.poster)
 
@@ -65,6 +80,7 @@ onBeforeUnmount(() => {
   <div class="hero-wrap" :style="{ '--ambient': ambient }">
   <section
     class="hero"
+    :class="{ waiting: hydrated && !bannerReady }"
     aria-roledescription="carousel"
     aria-label="រឿងពិសេស"
     @mouseenter="interacting = true"
@@ -400,5 +416,17 @@ onBeforeUnmount(() => {
     width: 18px;
     background: #fff;
   }
+}
+
+/* Banner still loading: a soft moving sheen instead of a flat box */
+.hero.waiting::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--shimmer);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  opacity: 0.5;
 }
 </style>

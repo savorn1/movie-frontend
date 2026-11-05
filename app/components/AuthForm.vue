@@ -4,7 +4,7 @@
 const props = defineProps<{ mode: 'login' | 'register' }>()
 
 const route = useRoute()
-const { login, register, enabled, known, methods } = useViewer()
+const { login, register, enabled, known, methods, invited } = useViewer()
 const { show } = useToast()
 
 const phone = ref('')
@@ -17,10 +17,7 @@ const error = ref(route.query.error ? accountErrorFromCode(route.query.error) : 
 const hasProviders = computed(() => methods.value.telegram || methods.value.google)
 
 // Back to where they were, but only to a page on this site
-const next = computed(() => {
-  const n = route.query.next
-  return typeof n === 'string' && n.startsWith('/') && !n.startsWith('//') ? n : '/library'
-})
+const next = computed(() => localPath(route.query.next) ?? '/library')
 const otherLink = computed(() => ({
   path: props.mode === 'login' ? '/register' : '/login',
   query: route.query.next ? { next: route.query.next } : {}
@@ -68,6 +65,9 @@ async function submit() {
         }}
       </p>
 
+      <p v-if="invited && mode === 'register'" class="invited">
+        <AppIcon name="gift" :size="18" /> មិត្តភក្តិរបស់អ្នកបានអញ្ជើញអ្នក · មើល ៣ វគ្គ ហើយអ្នកទាំងពីរទទួលបាន ៥០ កាក់
+      </p>
       <p v-if="known && !enabled" class="error" role="alert">មិនទាន់អាចប្រើគណនីបាននៅឡើយទេ</p>
 
       <template v-if="enabled && hasProviders">
@@ -264,5 +264,21 @@ h1 {
 .switch a {
   color: var(--accent);
   font-weight: 600;
+}
+.invited {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(47, 191, 113, 0.12);
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.invited svg {
+  flex: none;
+  color: #2fbf71;
 }
 </style>

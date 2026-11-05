@@ -2,7 +2,21 @@
 
 const props = defineProps<{ initial?: string; autofocus?: boolean }>()
 
-const popular = ['រឿង AI', 'រឿងចិន', 'ស្នេហា', 'ក្បាច់គុន', 'សងសឹក', 'ផ្សងព្រេង']
+// Shown until real searches are counted ("trending" needs a term searched at least twice this week)
+const fallbackPopular = ['រឿង AI', 'រឿងចិន', 'ស្នេហា', 'ក្បាច់គុន', 'សងសឹក', 'ផ្សងព្រេង']
+const trending = useState<string[] | null>('search-trending', () => null)
+const popular = computed(() => (trending.value?.length ? trending.value : fallbackPopular))
+async function loadTrending() {
+  if (trending.value) return
+  trending.value = []
+  try {
+    trending.value = (await $fetch<{ term: string }[]>('/api/search/trending')).map(t => t.term)
+  } catch {
+    // Keep the fallback list
+  }
+}
+/** Count what people search for (only searches they acted on) */
+const logSearch = (term: string) => term.trim().length >= 2 && $fetch('/api/search/log', { method: 'POST', body: { term } }).catch(() => {})
 
 const { recentSearches, addRecentSearch, clearRecentSearches } = useLibrary()
 
@@ -28,6 +42,7 @@ function submit(term = query.value) {
   const t = term.trim()
   if (!t) return
   addRecentSearch(t)
+  logSearch(t)
   query.value = t
   open.value = false
   input.value?.blur()
@@ -36,6 +51,7 @@ function submit(term = query.value) {
 
 function openResult(movieId: number) {
   addRecentSearch(query.value.trim())
+  logSearch(query.value)
   open.value = false
   navigateTo(`/detail/${movieId}`)
 }
@@ -78,7 +94,7 @@ onBeforeUnmount(() => clearTimeout(timer))
       :aria-activedescendant="activeIndex >= 0 ? `${id}-opt-${activeIndex}` : undefined"
       enterkeyhint="search"
       autocomplete="off"
-      @focus="open = true"
+      @focus="open = true; loadTrending()"
       @blur="open = false"
       @keydown="onKeydown"
     >
@@ -98,12 +114,12 @@ onBeforeUnmount(() => clearTimeout(timer))
             :class="{ active: i === activeIndex }"
             @click="openResult(m.id)"
           >
-            <img :src="m.poster" alt="" width="36" height="50">
+            <img loading="lazy" decoding="async" :src="m.poster" alt="" width="36" height="50">
             <span class="r-title">{{ m.title }}</span>
             <span class="r-meta">{{ m.episode }}</span>
           </li>
         </ul>
-        <p v-else class="empty">រកមិនឃើញ “{{ debounced }}”។ សាកល្បងពាក្យខ្លីជាងនេះ។</p>
+        <p v-else class="empty">រកមិនឃើញ “{{ debounced }}”។ សាកល្បងពាក្យខ្លីជាងនេះ ឬសរសេរជាអក្សរឡាតាំង (ឧ. sneha)។</p>
         <button type="button" class="all" @click="submit()">មើលលទ្ធផលទាំងអស់</button>
       </template>
 
@@ -118,7 +134,9 @@ onBeforeUnmount(() => clearTimeout(timer))
           </div>
         </div>
         <div class="group">
-          <div class="group-head"><strong>ការស្វែងរកពេញនិយម</strong></div>
+          <div class="group-head">
+            <strong>{{ trending?.length ? 'កំពុងស្វែងរកច្រើនសប្តាហ៍នេះ' : 'ការស្វែងរកពេញនិយម' }}</strong>
+          </div>
           <div class="tags">
             <button v-for="t in popular" :key="t" type="button" @click="submit(t)">{{ t }}</button>
           </div>

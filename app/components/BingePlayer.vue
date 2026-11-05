@@ -29,6 +29,11 @@ const waiting = ref(false)
 const controlsVisible = ref(true)
 const countdown = ref<number | null>(null)
 const wallEp = ref<number | null>(null)
+/** Playing the free opening of a locked episode: stop at `seconds` and show the wall over that frame */
+const preview = ref<{ seconds: number; done: boolean } | null>(null)
+/** After unlocking from a preview, carry on from where it stopped */
+let continueFrom = 0
+const previewLeft = computed(() => (preview.value ? Math.max(0, Math.ceil(preview.value.seconds - current.value)) : 0))
 const skipHint = ref<{ side: 'left' | 'right'; key: number } | null>(null)
 const isFullscreen = ref(false)
 const moreOpen = ref(false)
@@ -80,6 +85,8 @@ let hls: Hls | null = null
 async function load() {
   const el = video.value
   if (!el) return
+  // The full player takes over from the corner one
+  mini.close()
   hls?.destroy()
   hls = null
   ended.value = false
@@ -88,6 +95,16 @@ async function load() {
   current.value = 0
   duration.value = 0
 
+  const teaser = props.movie.previews?.[props.ep]
+  if (!canWatch(props.movie, props.ep) && teaser) {
+    wallEp.value = null
+    preview.value = { seconds: teaser.seconds, done: false }
+    el.src = teaser.url
+    el.playbackRate = el.defaultPlaybackRate = prefs.value.speed
+    play()
+    return
+  }
+  preview.value = null
   if (!canWatch(props.movie, props.ep)) {
     el.removeAttribute('src')
     el.load()
@@ -125,9 +142,16 @@ function play() {
 }
 
 function onLoadedMetadata() {
-  const el = video.value!
+  const el = video.value
+  if (!el) return
   duration.value = el.duration
   applyCaptions()
+  if (preview.value) return
+  if (continueFrom > 0 && continueFrom < el.duration - 1) {
+    el.currentTime = continueFrom
+    continueFrom = 0
+    return
+  }
   // A shared moment (?t=42) wins over the viewer's own saved position
   const shared = Number(route.query.t)
   if (Number.isFinite(shared) && shared > 0 && shared < el.duration - 1) {
@@ -150,11 +174,26 @@ function shareMoment() {
 
 let lastSave = 0
 function onTimeUpdate() {
-  const el = video.value!
+  // Can fire while the page is being left
+  const el = video.value
+  if (!el) return
   current.value = el.currentTime
   if (el.buffered.length) bufferedEnd.value = el.buffered.end(el.buffered.length - 1)
+  if (preview.value) {
+    // The opening is over (or was skipped past): pause on this frame and offer to unlock
+    if (!preview.value.done && el.currentTime >= preview.value.seconds) {
+      el.pause()
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+      preview.value = { ...preview.value, done: true }
+      wallEp.value = props.ep
+    }
+    return
+  }
   if (Date.now() - lastSave > 3000) persist()
-  if (el.duration && el.currentTime / el.duration >= 0.9) track(props.movie.id, props.ep, 'complete')
+  if (el.duration && el.currentTime / el.duration >= 0.9) {
+    track(props.movie.id, props.ep, 'complete')
+    reportFinished()
+  }
   if (sleep.expired()) {
     el.pause()
     sleep.clear()
@@ -169,7 +208,7 @@ function onPlay() {
 
 function persist() {
   const el = video.value
-  if (!el || !el.duration || wallEp.value) return
+  if (!el || !el.duration || wallEp.value || preview.value) return
   lastSave = Date.now()
   saveProgress(props.movie.id, props.ep, el.currentTime, el.duration)
 }
@@ -177,10 +216,45 @@ function persist() {
 // ---------- Auto-advance ----------
 let tick: ReturnType<typeof setInterval> | undefined
 
+// Finished episodes count for today's missions and for invite rewards (signed-in viewers, real series)
+const { viewer: signedIn } = useViewer()
+const missionState = useState<unknown[] | null>('missions', () => null)
+let reportedFor = ''
+function reportFinished() {
+  const key = `${props.movie.id}:${props.ep}`
+  if (!signedIn.value || !props.movie.remote || reportedFor === key) return
+  reportedFor = key
+  $fetch<{ missions: unknown[] }>('/api/missions/watch', { method: 'POST', body: { seriesId: props.movie.id, episode: props.ep } })
+    .then(r => (missionState.value = r.missions))
+    .catch(() => (reportedFor = ''))
+}
+
+// After episode 3 a viewer is hooked: offer new-episode alerts once per series (not before, when
+// a permission prompt would just be dismissed)
+const followSeries = useFollowSeries()
+function nudgeFollow() {
+  if (props.ep !== 3 || followSeries.isFollowing(props.movie.id) || props.movie.status === 'completed') return
+  const key = `rf-nudged-${props.movie.id}`
+  try {
+    if (localStorage.getItem(key)) return
+    localStorage.setItem(key, '1')
+  } catch {
+    // Storage blocked: nudging again later is harmless
+  }
+  show('ចូលចិត្តរឿងនេះ? តាមដានដើម្បីដឹងពេលវគ្គថ្មីចេញ', { label: 'តាមដាន', run: () => followSeries.follow(props.movie) })
+}
+
 function onEnded() {
   playing.value = false
+  if (preview.value) {
+    // A preview shorter than its limit (a short episode): the wall for this episode, not the next
+    preview.value = { ...preview.value, done: true }
+    wallEp.value = props.ep
+    return
+  }
   ended.value = true
   persist()
+  nudgeFollow()
   const n = nextEp.value
   if (!n) return
   if (sleep.stopAtEpisodeEnd.value) {
@@ -188,8 +262,8 @@ function onEnded() {
     show('ម៉ោងគេង៖ ឈប់បន្ទាប់ពីវគ្គនេះ')
     return
   }
-  if (!canWatch(props.movie, n)) {
-    // Cliffhanger wall over the frozen last frame
+  if (!canWatch(props.movie, n) && !props.movie.previews?.[n]) {
+    // Cliffhanger wall over the frozen last frame (an episode with a free opening plays that instead)
     wallEp.value = n
     return
   }
@@ -226,7 +300,83 @@ function replay() {
 watch(() => props.ep, () => {
   sheet.value?.close()
   load()
+  loadReactions()
 })
+
+// ---------- Reactions on the timeline (movie-api series) ----------
+const REACTION_EMOJI = { laugh: '😂', cry: '😭', fire: '🔥', love: '😍' } as const
+type ReactionKind = keyof typeof REACTION_EMOJI
+const REACTION_LABELS: Record<ReactionKind, string> = { laugh: 'សើច', cry: 'យំ', fire: 'ក្តៅគគុក', love: 'ស្រលាញ់' }
+const reactions = ref<{ bucket: number; kind: ReactionKind; count: number }[]>([])
+const floating = ref<{ id: number; emoji: string; x: number }[]>([])
+let lastReaction = 0
+let floatId = 0
+
+async function loadReactions() {
+  reactions.value = []
+  if (!props.movie.remote) return
+  try {
+    reactions.value = await $fetch(`/api/reactions`, { query: { series: props.movie.id, ep: props.ep } })
+  } catch {
+    // Extra: the episode still plays
+  }
+}
+
+/** The busiest moments: up to 6 buckets, each shown with its most used emoji */
+const hotMoments = computed(() => {
+  if (!duration.value) return []
+  const byBucket = new Map<number, { total: number; top: ReactionKind; topCount: number }>()
+  for (const r of reactions.value) {
+    const b = byBucket.get(r.bucket) ?? { total: 0, top: r.kind, topCount: 0 }
+    b.total += r.count
+    if (r.count > b.topCount) Object.assign(b, { top: r.kind, topCount: r.count })
+    byBucket.set(r.bucket, b)
+  }
+  return [...byBucket.entries()]
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 6)
+    .map(([bucket, b]) => ({ bucket, at: Math.min(100, ((bucket * 5 + 2.5) / duration.value) * 100), emoji: REACTION_EMOJI[b.top], total: b.total }))
+    .filter(m => m.at <= 100)
+})
+
+async function react(kind: ReactionKind) {
+  // One every 1.5 s per viewer: taps faster than that only animate
+  const now = Date.now()
+  const counted = now - lastReaction > 1500
+  const id = ++floatId
+  floating.value = [...floating.value.slice(-6), { id, emoji: REACTION_EMOJI[kind], x: 10 + Math.random() * 40 }]
+  setTimeout(() => (floating.value = floating.value.filter(f => f.id !== id)), 1600)
+  haptic('tap')
+  reveal()
+  if (!counted) return
+  lastReaction = now
+  const second = Math.floor(current.value)
+  const bucket = Math.floor(second / 5)
+  const existing = reactions.value.find(r => r.bucket === bucket && r.kind === kind)
+  if (existing) existing.count++
+  else reactions.value = [...reactions.value, { bucket, kind, count: 1 }]
+  $fetch('/api/reactions', { method: 'POST', body: { series: props.movie.id, ep: props.ep, second, kind } }).catch(() => {})
+}
+
+// ---------- Frame preview over the progress bar ----------
+// Computers with a mouse, MP4 episodes, not in data-saver mode: a small muted copy of the video seeks
+// to the hovered moment. Elsewhere (touch, HLS, saving data) only the time shows.
+const peek = ref<{ x: number; time: number } | null>(null)
+const peekVideo = ref<HTMLVideoElement>()
+const canPeekFrames = ref(false)
+let peekFrame = 0
+function onScrubHover(e: PointerEvent) {
+  if (!duration.value) return
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+  peek.value = { x: ratio * 100, time: ratio * duration.value }
+  if (!canPeekFrames.value || source.value.type !== 'mp4' || saveData.value) return
+  cancelAnimationFrame(peekFrame)
+  peekFrame = requestAnimationFrame(() => {
+    const v = peekVideo.value
+    if (v && peek.value && Math.abs(v.currentTime - peek.value.time) > 0.5) v.currentTime = peek.value.time
+  })
+}
 
 // ---------- Controls ----------
 function togglePlay() {
@@ -247,7 +397,10 @@ function seekBy(delta: number) {
 
 function onScrub(e: Event) {
   const el = video.value
-  if (el) el.currentTime = Number((e.target as HTMLInputElement).value)
+  const t = Number((e.target as HTMLInputElement).value)
+  if (el) el.currentTime = t
+  // Dragging on a phone: show the time above the thumb
+  if (duration.value) peek.value = { x: (t / duration.value) * 100, time: t }
 }
 
 function toggleMute() {
@@ -282,9 +435,24 @@ function liftCues() {
   for (const cue of Array.from(cues ?? [])) {
     const c = cue as VTTCue
     c.snapToLines = true
-    c.line = -4
+    c.line = prefs.value.captionPos === 'high' ? -7 : -4
   }
 }
+
+// Subtitle look, from the More panel; kept with the other player preferences
+const CAPTION_SIZES = [
+  { value: 's', label: 'តូច' },
+  { value: 'm', label: 'មធ្យម' },
+  { value: 'l', label: 'ធំ' },
+  { value: 'xl', label: 'ធំណាស់' }
+] as const
+const CAPTION_BGS = [
+  { value: 'none', label: 'គ្មាន' },
+  { value: 'soft', label: 'ស្រាល' },
+  { value: 'solid', label: 'ដិត' }
+] as const
+const captionClass = computed(() => [`cap-${prefs.value.captionSize ?? 'm'}`, `cap-bg-${prefs.value.captionBg ?? 'soft'}`])
+watch(() => prefs.value.captionPos, liftCues)
 
 function toggleCaptions() {
   prefs.value.captions = !prefs.value.captions
@@ -423,6 +591,8 @@ function onMoreOutside(e: MouseEvent) {
 }
 
 onMounted(() => {
+  canPeekFrames.value = window.matchMedia('(hover: hover) and (pointer: fine)').matches
+  loadReactions()
   const v = video.value as (HTMLVideoElement & { webkitSupportsPresentationMode?: (m: string) => boolean }) | undefined
   pipSupported.value = (!!document.pictureInPictureEnabled && !v?.disablePictureInPicture)
     || !!v?.webkitSupportsPresentationMode?.('picture-in-picture')
@@ -434,8 +604,23 @@ onMounted(() => {
   load()
 })
 
+// Leaving the watch page while an episode plays: it carries on in the corner (MiniPlayer)
+const mini = useMiniPlayer()
 onBeforeUnmount(() => {
   persist()
+  const el = video.value
+  if (el && playing.value && !ended.value && !wallEp.value && !preview.value && canWatch(props.movie, props.ep)) {
+    mini.open({
+      movieId: props.movie.id,
+      ep: props.ep,
+      title: props.movie.title,
+      poster: props.movie.banner,
+      src: source.value.src,
+      type: source.value.type,
+      time: el.currentTime,
+      muted: el.muted
+    })
+  }
   hls?.destroy()
   clearInterval(tick)
   clearTimeout(hideTimer)
@@ -452,7 +637,11 @@ function openEpisodes() {
 
 function onUnlocked() {
   wallEp.value = null
-  if (ended.value && nextEp.value) goEp(nextEp.value)
+  if (preview.value) {
+    // Same episode, now paid: the full video, from where the opening stopped
+    continueFrom = Math.max(0, current.value - 2)
+    load()
+  } else if (ended.value && nextEp.value) goEp(nextEp.value)
   else load()
 }
 </script>
@@ -461,7 +650,7 @@ function onUnlocked() {
   <div
     ref="wrap"
     class="player"
-    :class="{ 'hide-ui': !controlsVisible && playing, fullscreen: isFullscreen, pseudo: pseudoFullscreen }"
+    :class="[{ 'hide-ui': !controlsVisible && playing, fullscreen: isFullscreen, pseudo: pseudoFullscreen }, captionClass]"
     @mousemove="reveal"
   >
     <video
@@ -513,6 +702,10 @@ function onUnlocked() {
       </div>
     </div>
 
+    <span v-if="preview && !preview.done" class="preview-pill" role="status">
+      <AppIcon name="lock" :size="13" solid /> មើលសាកល្បង · នៅសល់ {{ kh(previewLeft) }} វិ
+    </span>
+
     <button
       v-if="(!playing || needsTap) && !ended && !wallEp && !countdown"
       type="button"
@@ -555,7 +748,7 @@ function onUnlocked() {
         <p class="eyebrow">ចប់រឿង {{ movie.title }}</p>
         <EpisodeRating :movie-id="movie.id" :ep="ep" />
         <NuxtLink v-if="nextSeries" :to="`/watch/${nextSeries.id}/1`" class="next-series">
-          <img :src="nextSeries.poster" alt="">
+          <img loading="lazy" decoding="async" :src="nextSeries.poster" alt="">
           <span>
             <small>រឿងបន្ទាប់</small>
             <strong>{{ nextSeries.title }}</strong>
@@ -565,12 +758,42 @@ function onUnlocked() {
       </template>
     </div>
 
-    <UnlockWall v-if="wallEp" :movie="movie" :ep="wallEp" @unlocked="onUnlocked" />
+    <!-- Emoji reactions: tap to react at this moment; busy moments show on the progress bar -->
+    <div v-if="movie.remote && !wallEp && !preview" class="react-rail" @click.stop>
+      <button v-for="(emoji, kind) in REACTION_EMOJI" :key="kind" type="button" :aria-label="REACTION_LABELS[kind]" @click="react(kind)">
+        {{ emoji }}
+      </button>
+    </div>
+    <div class="floaters" aria-hidden="true">
+      <span v-for="f in floating" :key="f.id" :style="{ right: `${f.x}px` }">{{ f.emoji }}</span>
+    </div>
+
+    <UnlockWall v-if="wallEp" :movie="movie" :ep="wallEp" :previewed="!!preview?.done" @unlocked="onUnlocked" />
 
     <!-- Bottom controls -->
     <div v-if="!wallEp" class="controls" @click.stop>
-      <div class="scrub">
+      <div class="scrub" @pointermove="onScrubHover" @pointerleave="peek = null" @touchend="peek = null">
         <div class="buffer" :style="{ width: `${duration ? (bufferedEnd / duration) * 100 : 0}%` }" />
+        <span
+          v-for="m in hotMoments"
+          :key="m.bucket"
+          class="moment"
+          :style="{ left: `${m.at}%` }"
+          :title="`${kh(m.total)} reactions`"
+          aria-hidden="true"
+        >{{ m.emoji }}</span>
+        <div v-if="peek" class="peek" :style="{ left: `clamp(60px, ${peek.x}%, calc(100% - 60px))` }" aria-hidden="true">
+          <video
+            v-if="canPeekFrames && source.type === 'mp4' && !saveData"
+            ref="peekVideo"
+            :src="source.src"
+            muted
+            preload="metadata"
+            playsinline
+            tabindex="-1"
+          />
+          <span>{{ fmt(peek.time) }}</span>
+        </div>
         <input
           type="range"
           min="0"
@@ -621,6 +844,28 @@ function onUnlocked() {
                 <option v-for="o in sleepOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
               </select>
             </label>
+            <fieldset class="captions-set">
+              <legend>អក្សររត់</legend>
+              <label>
+                <span>ទំហំ</span>
+                <select v-model="prefs.captionSize">
+                  <option v-for="o in CAPTION_SIZES" :key="o.value" :value="o.value">{{ o.label }}</option>
+                </select>
+              </label>
+              <label>
+                <span>ផ្ទៃខាងក្រោយ</span>
+                <select v-model="prefs.captionBg">
+                  <option v-for="o in CAPTION_BGS" :key="o.value" :value="o.value">{{ o.label }}</option>
+                </select>
+              </label>
+              <label>
+                <span>ទីតាំង</span>
+                <select v-model="prefs.captionPos">
+                  <option value="low">ទាប</option>
+                  <option value="high">ខ្ពស់</option>
+                </select>
+              </label>
+            </fieldset>
             <button type="button" @click="openReport">
               <AppIcon name="flag" :size="18" />រាយការណ៍បញ្ហា
             </button>
@@ -1114,8 +1359,67 @@ function onUnlocked() {
   font: inherit;
 }
 
-.sleep option {
+.sleep option,
+.captions-set option {
   color: #000;
+}
+
+.captions-set {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0;
+  padding: 6px 12px 8px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 14px;
+}
+
+.captions-set legend {
+  float: left;
+  width: 100%;
+  padding: 4px 0;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+}
+
+.captions-set label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+}
+
+.captions-set select {
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: inherit;
+}
+
+/* Subtitle sizes and boxes (::cue can't read variables everywhere, so one rule per choice) */
+.cap-s .video::cue {
+  font-size: 0.85em;
+}
+
+.cap-l .video::cue {
+  font-size: 1.35em;
+}
+
+.cap-xl .video::cue {
+  font-size: 1.7em;
+}
+
+.cap-bg-none .video::cue {
+  background: transparent;
+  text-shadow: 0 0 4px #000, 0 0 2px #000, 0 1px 2px #000;
+}
+
+.cap-bg-solid .video::cue {
+  background: rgba(0, 0, 0, 0.92);
 }
 
 .skip-recap {
@@ -1239,6 +1543,125 @@ function onUnlocked() {
 
   .controls {
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
+.preview-pill {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ffe26a, #ffb800);
+  color: #3a2600;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.moment {
+  position: absolute;
+  top: -16px;
+  z-index: 1;
+  font-size: 13px;
+  line-height: 1;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.peek {
+  position: absolute;
+  bottom: 22px;
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.peek video {
+  width: 160px;
+  aspect-ratio: 16 / 9;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 8px;
+  background: #000;
+  object-fit: cover;
+}
+
+.peek span {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.react-rail {
+  position: absolute;
+  right: 12px;
+  bottom: 140px;
+  z-index: 4;
+  display: grid;
+  gap: 6px;
+  transition: opacity 0.2s;
+}
+
+.react-rail button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.react-rail button:active {
+  transform: scale(1.2);
+}
+
+.hide-ui .react-rail {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.floaters {
+  position: absolute;
+  right: 0;
+  bottom: 190px;
+  z-index: 4;
+  width: 100px;
+  height: 0;
+  pointer-events: none;
+}
+
+.floaters span {
+  position: absolute;
+  bottom: 0;
+  font-size: 28px;
+  animation: float-up 1.6s ease-out forwards;
+}
+
+@keyframes float-up {
+  from {
+    transform: translateY(0) scale(0.8);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-180px) scale(1.3);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floaters {
+    display: none;
   }
 }
 </style>

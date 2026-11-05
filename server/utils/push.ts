@@ -48,3 +48,33 @@ export async function pushNewEpisode(movie: Movie, ep: number) {
   }
   return { sent, removed, failed }
 }
+
+export interface PushTarget {
+  id: number
+  endpoint: string
+  p256dh: string
+  auth: string
+}
+
+/** Push one notification to some browsers; drops subscriptions that are gone */
+export async function pushTo(targets: PushTarget[], message: { title: string; body: string; url: string; tag: string }) {
+  if (!pushEnabled() || !targets.length) return 0
+  const c = useRuntimeConfig()
+  const site = c.public.siteUrl.replace(/\/$/, '')
+  const payload = JSON.stringify({ ...message, icon: '/icons/icon-192.png' })
+  let sent = 0
+  for (const t of targets) {
+    try {
+      await webpush.sendNotification({ endpoint: t.endpoint, keys: { p256dh: t.p256dh, auth: t.auth } }, payload, {
+        vapidDetails: { subject: c.vapidSubject || site, publicKey: c.public.vapidPublicKey, privateKey: c.vapidPrivateKey },
+        TTL: 24 * 3600,
+        timeout: 8000
+      })
+      sent++
+    } catch (err) {
+      const status = (err as { statusCode?: number }).statusCode
+      if (status === 404 || status === 410) await apiCall('DELETE', `/push/subscriptions/${t.id}`).catch(() => {})
+    }
+  }
+  return sent
+}

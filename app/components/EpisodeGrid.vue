@@ -1,11 +1,66 @@
 <script setup lang="ts">
-import type { Movie } from '#shared/data/movies'
+import { isLocked, type Movie } from '#shared/data/movies'
 
 const props = defineProps<{ movie: Movie; current?: number; compact?: boolean }>()
 
 // Locked episodes still open the watch page, which shows the unlock wall in context
-const { canWatch } = useLibrary()
-const locked = (ep: number) => !canWatch(props.movie, ep)
+const { canWatch, lastEpisode } = useLibrary()
+const hydrated = useHydrated()
+
+/**
+ * What each episode is to this viewer, shown with an icon as well as colour: locked (VIP, not paid),
+ * unlocked (VIP they paid for), watched (before the one they're on), or plain free
+ */
+type EpState = 'locked' | 'unlocked' | 'watched' | 'free'
+const last = computed(() => (hydrated.value ? lastEpisode(props.movie.id) ?? 0 : 0))
+function stateOf(ep: number): EpState {
+  if (!canWatch(props.movie, ep)) return 'locked'
+  if (ep < last.value) return 'watched'
+  return isLocked(props.movie, ep) ? 'unlocked' : 'free'
+}
+const LABELS: Record<EpState, string> = { locked: 'ត្រូវការ VIP', unlocked: 'បានដោះសោ', watched: 'បានមើល', free: 'ឥតគិតថ្លៃ' }
+const label = (ep: number) => `វគ្គ ${kh(ep)} · ${ep === props.current ? 'កំពុងមើល' : LABELS[stateOf(ep)]}`
+const hasVip = computed(() => props.movie.vip && props.movie.episodes > props.movie.freeEpisodes)
+
+/*
+ * Episode details (title, thumbnail, length) on hover with a mouse, or a long press on touch screens.
+ * movie-api series only, once their episodes are loaded.
+ */
+const { episodesOf } = useSeriesEpisodes()
+const peek = ref<{ ep: number; left: number; top: number } | null>(null)
+const info = computed(() => (peek.value ? episodesOf(props.movie.id)?.find(e => e.number === peek.value!.ep) ?? null : null))
+const minutes = (s: number | null) => (s ? `${kh(Math.max(1, Math.round(s / 60)))} នាទី` : '')
+let pressTimer: ReturnType<typeof setTimeout> | undefined
+let pressed = false
+
+function show(ep: number, el: HTMLElement) {
+  if (!props.movie.remote) return
+  const r = el.getBoundingClientRect()
+  peek.value = { ep, left: r.left + r.width / 2, top: r.top }
+}
+function onEnter(ep: number, e: MouseEvent) {
+  if (window.matchMedia('(hover: hover)').matches) show(ep, e.currentTarget as HTMLElement)
+}
+function onPressStart(ep: number, e: TouchEvent) {
+  pressed = false
+  const el = e.currentTarget as HTMLElement
+  pressTimer = setTimeout(() => {
+    pressed = true
+    show(ep, el)
+    haptic('tap')
+  }, 450)
+}
+function onPressEnd() {
+  clearTimeout(pressTimer)
+}
+// A long press shows the details instead of opening the episode
+function onClick(e: MouseEvent) {
+  if (pressed) {
+    e.preventDefault()
+    pressed = false
+  }
+}
+onBeforeUnmount(() => clearTimeout(pressTimer))
 
 // Long series are split into ranges of 30 so the grid stays scannable
 const RANGE = 30
@@ -40,16 +95,43 @@ const visible = computed(() => {
       <li v-for="ep in visible" :key="ep">
         <NuxtLink
           :to="`/watch/${movie.id}/${ep}`"
-          :class="{ locked: locked(ep), current: ep === current }"
+          :class="[stateOf(ep), { current: ep === current }]"
           :aria-current="ep === current ? 'true' : undefined"
-          :aria-label="locked(ep) ? `វគ្គ ${kh(ep)} ត្រូវការ VIP` : `វគ្គ ${kh(ep)}`"
+          :aria-label="label(ep)"
+          @mouseenter="onEnter(ep, $event)"
+          @mouseleave="peek = null"
+          @touchstart.passive="onPressStart(ep, $event)"
+          @touchend="onPressEnd"
+          @touchmove.passive="onPressEnd"
+          @click="onClick"
+          @contextmenu="pressed && $event.preventDefault()"
         >
           <span v-if="ep === current" class="eq" aria-hidden="true"><i /><i /><i /></span>
           {{ kh(ep) }}
-          <AppIcon v-if="locked(ep)" name="lock" :size="12" class="lock" />
+          <AppIcon v-if="stateOf(ep) === 'locked'" name="lock" :size="12" class="mark lock" />
+          <AppIcon v-else-if="stateOf(ep) === 'unlocked' && ep !== current" name="crown" :size="11" class="mark crown" />
+          <AppIcon v-else-if="stateOf(ep) === 'watched' && ep !== current" name="check" :size="12" class="mark seen" />
         </NuxtLink>
       </li>
     </ol>
+    <Teleport to="body">
+      <div
+        v-if="peek && info"
+        class="ep-peek"
+        :style="{ left: `clamp(110px, ${peek.left}px, calc(100vw - 110px))`, top: `${peek.top}px` }"
+        role="tooltip"
+        @click="peek = null"
+      >
+        <img v-if="info.thumbnailUrl" :src="info.thumbnailUrl" alt="" width="200" height="112" decoding="async">
+        <strong>វគ្គ {{ kh(peek.ep) }}<template v-if="info.title"> · {{ info.title }}</template></strong>
+        <span>{{ minutes(info.durationSeconds) }}<template v-if="info.locked"> · VIP</template></span>
+      </div>
+    </Teleport>
+    <ul v-if="!compact || hasVip" class="legend" aria-hidden="true">
+      <li><AppIcon name="check" :size="12" class="seen" /> បានមើល</li>
+      <li v-if="hasVip"><AppIcon name="crown" :size="11" class="crown" /> បានដោះសោ</li>
+      <li v-if="hasVip"><AppIcon name="lock" :size="12" class="lock" /> VIP</li>
+    </ul>
   </div>
 </template>
 
@@ -113,13 +195,48 @@ const visible = computed(() => {
 
 .grid a.locked {
   color: var(--text-muted);
+  border-style: dashed;
 }
 
-.lock {
+.grid a.watched {
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.grid a.unlocked {
+  border-color: rgba(255, 184, 0, 0.55);
+}
+
+.mark {
   position: absolute;
   top: 4px;
   right: 4px;
+}
+
+.lock,
+.crown {
   color: var(--accent-text);
+}
+
+.seen {
+  color: #2fbf71;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* "Now playing" bars on the current episode */
@@ -166,5 +283,41 @@ const visible = computed(() => {
   .grid {
     grid-template-columns: repeat(5, 1fr);
   }
+}
+
+.ep-peek {
+  position: fixed;
+  z-index: 120;
+  display: grid;
+  gap: 4px;
+  width: 200px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elev);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, calc(-100% - 8px));
+}
+
+.ep-peek img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #000;
+}
+
+.ep-peek strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-peek span {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 </style>

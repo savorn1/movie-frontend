@@ -5,6 +5,10 @@ usePageMeta({ title: 'ខ្ញុំ', noindex: true })
 
 const { history, continueWatching, favorites, following, prefs } = useLibrary()
 const { viewer } = useViewer()
+const { wallet } = useWallet()
+const { planPrice } = useSite()
+// The cheapest monthly rate across the plans (was a fixed "$1.25")
+const vipFrom = computed(() => Math.min(...([1, 3, 6, 12] as const).map(m => +(planPrice(m) / m).toFixed(2))))
 const { reason: saverReason } = useDataSaver()
 const { state: installState, install } = useInstallApp()
 const hydrated = useHydrated()
@@ -50,17 +54,35 @@ function clearHistory() {
       <NuxtLink to="/vip" class="vip-card">
         <AppIcon name="crown" :size="20" />
         <div>
-          <strong>ដំឡើងជា VIP</strong>
-          <span>ដោះសោគ្រប់វគ្គ ចាប់ពី $1.25 / ខែ</span>
+          <ClientOnly>
+            <template v-if="wallet?.vipActive && wallet.vipUntil">
+              <strong>VIP សកម្ម</strong>
+              <span>ដល់ {{ new Date(wallet.vipUntil).toLocaleDateString('en-GB') }}</span>
+            </template>
+            <template v-else>
+              <strong>ដំឡើងជា VIP</strong>
+              <span>ដោះសោគ្រប់វគ្គ ចាប់ពី ${{ vipFrom }} / ខែ</span>
+            </template>
+            <template #fallback>
+              <strong>ដំឡើងជា VIP</strong>
+              <span>ដោះសោគ្រប់វគ្គ</span>
+            </template>
+          </ClientOnly>
         </div>
         <AppIcon name="chevron-right" :size="18" />
       </NuxtLink>
     </section>
 
+    <ClientOnly>
+      <StartHere />
+    </ClientOnly>
+
     <AccountPanel />
 
     <ClientOnly>
       <WalletPanel />
+      <MissionsCard class="me-card" />
+      <InviteCard class="me-card" />
     </ClientOnly>
 
     <section class="appearance">
@@ -293,5 +315,8 @@ h2 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 16px 10px;
   }
+}
+.me-card {
+  margin-top: 16px;
 }
 </style>

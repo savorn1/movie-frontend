@@ -88,7 +88,7 @@ async function onLogout() {
 
     <template v-if="viewer">
       <div class="row">
-        <img v-if="viewer.photoUrl" :src="viewer.photoUrl" alt="" class="avatar" width="48" height="48" referrerpolicy="no-referrer">
+        <img loading="lazy" decoding="async" v-if="viewer.photoUrl" :src="viewer.photoUrl" alt="" class="avatar" width="48" height="48" referrerpolicy="no-referrer">
         <div class="who">
           <strong>{{ viewer.displayName }}</strong>
           <span>{{ signInWays }}</span>

@@ -10,7 +10,8 @@ function runAction(id: number, run: () => void) {
 <template>
   <div class="toasts" role="status" aria-live="polite">
     <TransitionGroup name="toast">
-      <div v-for="t in toasts" :key="t.id" class="toast">
+      <div v-for="t in toasts" :key="t.id" class="toast" :class="t.tone">
+        <AppIcon v-if="t.tone" :name="t.tone === 'success' ? 'check' : 'alert'" :size="18" class="tone" />
         <span>{{ t.message }}</span>
         <button v-if="t.action" type="button" class="action" @click="runAction(t.id, t.action.run)">
           {{ t.action.label }}
@@ -54,6 +55,24 @@ function runAction(id: number, run: () => void) {
 
 .toast span {
   flex: 1;
+}
+
+.toast.success,
+.toast.error {
+  padding-left: 12px;
+}
+
+.tone {
+  flex: none;
+  margin-right: 4px;
+}
+
+.success .tone {
+  color: #1f9d55;
+}
+
+.error .tone {
+  color: #e5484d;
 }
 
 .action {

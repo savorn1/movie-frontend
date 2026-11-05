@@ -1,3 +1,4 @@
+import { khmerToLatin, wordMatches } from '../utils/searchMatch'
 const khmerDigits = '០១២៣៤៥៦៧៨៩'
 /** Khmer numerals for display text (episodes, counts, years). Prices and player time stay Western. */
 export const toKhmerDigits = (n: number | string) => String(n).replace(/\d/g, d => khmerDigits[+d]!)
@@ -36,6 +37,8 @@ export interface Movie {
   remote?: boolean
   /** VideoLingo series: which episodes have published subtitles (others get no track request) */
   subtitled?: Record<number, boolean>
+  /** VideoLingo series: the first VIP episode's opening, playable before paying (link + seconds) */
+  previews?: Record<number, { url: string; seconds: number }>
   /** Place in the home hero (1 first), set in videolingo-web; null/absent = not a hero pick */
   featuredRank?: number | null
 }
@@ -195,15 +198,20 @@ export function searchIn(list: Movie[], term: string) {
   if (!/[a-z]/i.test(t)) {
     return list.filter(m => m.title.includes(t) || m.genres.some(g => g.includes(t)))
   }
-  // Latin input: every word must match the title keywords or an alias
+  // Latin input: every word must match the title keywords, the title spelled in Latin letters, or an
+  // alias, allowing a typo or two in longer words
   const words = norm(t).split(' ').filter(w => w.length > 1)
   if (!words.length) return []
   const q = words.join(' ')
   return list.filter((m) => {
-    const hay = norm(m.latin)
+    const hay = norm(`${m.latin} ${khmerToLatin(m.title)} ${m.genres.map(khmerToLatin).join(' ')}`)
     if (hay.includes(q)) return true
+    const hayWords = hay.split(' ')
+    // The Latin spelling of a title without spaces between words (ស្នេហារដូវក្តៅ → snehardauvkdau)
+    const joined = norm(khmerToLatin(m.title)).replace(/ /g, '')
     return words.every(w =>
-      hay.split(' ').some(k => k.startsWith(w))
+      hayWords.some(k => wordMatches(w, k))
+      || (w.length >= 4 && joined.includes(w))
       || latinAliases.some(a => a.words.some(x => x.startsWith(w) || x === q) && a.match(m))
     )
   })

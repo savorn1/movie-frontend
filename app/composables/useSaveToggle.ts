@@ -5,6 +5,7 @@ export function useSaveToggle() {
 
   function toggleSave(id: number) {
     toggleFavorite(id)
+    haptic('tap')
     show(isFavorite(id) ? 'បានរក្សាទុកក្នុង “ខ្ញុំ”' : 'បានដកចេញពីចំណូលចិត្ត', {
       label: 'មិនធ្វើវិញ',
       run: () => toggleFavorite(id)

@@ -46,6 +46,8 @@ export interface ApiEpisode {
   videoUrl: string | null
   /** Path on movie-api; null when locked or without published subtitles */
   subtitlesUrl: string | null
+  /** The first VIP episode while locked: its opening, to watch before paying */
+  preview?: { url: string; seconds: number } | null
 }
 
 interface ApiDetail {

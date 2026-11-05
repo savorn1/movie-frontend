@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
     locked: e.locked,
     premium: e.premium ?? e.locked,
     videoUrl: e.videoUrl,
-    hasSubtitles: !!e.subtitlesUrl
+    hasSubtitles: !!e.subtitlesUrl,
+    preview: e.preview ?? null
   }))
 })

@@ -4,7 +4,7 @@ import type { Movie } from '#shared/data/movies'
 defineProps<{ movie: Movie; eager?: boolean; progress?: { ep: number; total: number; value?: number } }>()
 
 // Images that finished before hydration never fire `load`, so check `complete` on mount.
-const { newEpisodes } = useLibrary()
+const { hasNew } = useLibrary()
 const hydrated = useHydrated()
 
 const img = ref<HTMLImageElement>()
@@ -18,7 +18,7 @@ onMounted(() => {
   <NuxtLink :to="progress ? `/watch/${movie.id}/${progress.ep}` : `/detail/${movie.id}`" class="poster">
     <div class="cover" :class="{ shimmer: !loaded }">
       <span v-if="movie.vip" class="vip-badge corner">VIP</span>
-      <span v-if="hydrated && newEpisodes(movie.id)" class="new-badge">វគ្គថ្មី</span>
+      <span v-if="hydrated && hasNew(movie.id)" class="new-badge">វគ្គថ្មី</span>
       <span v-if="!progress" class="note">{{ movie.episode }}</span>
       <img
         ref="img"

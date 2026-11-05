@@ -41,12 +41,17 @@ const paths: Record<string, string> = {
   skip: 'M5 5v14l9-7zM16 5v14',
   calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
   coin: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v10M9.5 9.5c0-1 1-1.5 2.5-1.5s2.5.6 2.5 1.7c0 2.3-5 1.3-5 3.6 0 1.1 1 1.7 2.5 1.7s2.5-.5 2.5-1.5',
-  comment: 'M4 5h16v11H9l-5 4z'
+  comment: 'M4 5h16v11H9l-5 4z',
+  download: 'M12 3v12M7 10l5 5 5-5M5 21h14',
+  pin: 'M9 3h6l-1 6 3 3H7l3-3zM12 12v9',
+  alert: 'M12 3l10 18H2zM12 10v5M12 18h.01',
+  gift: 'M4 11h16v10H4zM3 7h18v4H3zM12 7v14M12 7c-1.5-3-5-3-5-1s3 1 5 1zM12 7c1.5-3 5-3 5-1s-3 1-5 1z',
+  sparkle: 'M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z'
 }
 
 // Some glyphs are always filled; closed shapes also fill when `solid` marks the active state.
 const alwaysFilled = ['play', 'pause', 'crown', 'fire', 'more']
-const closedShapes = ['home', 'heart', 'lock', 'shorts', 'user']
+const closedShapes = ['home', 'heart', 'lock', 'shorts', 'user', 'pin', 'sparkle']
 const filled = computed(() =>
   alwaysFilled.includes(props.name) || (props.solid && closedShapes.includes(props.name))
 )

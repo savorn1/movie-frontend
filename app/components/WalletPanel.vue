@@ -10,6 +10,7 @@ interface OrderRow {
   coins: number | null
   seriesTitle: string | null
   months: number | null
+  bonusCoins: number | null
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED'
   createdAt: string
 }
@@ -17,36 +18,51 @@ interface OrderRow {
 const { viewer } = useViewer()
 const { wallet, refresh, checkIn } = useWallet()
 const { prices } = useSite()
-const { show } = useToast()
+const { success, fail } = useToast()
+const route = useRoute()
 
 const orders = ref<OrderRow[]>([])
 const paying = ref<{ product: Product; label: string } | null>(null)
 const busy = ref(false)
+/** First load finished (the skeleton shows until then) */
+const loaded = ref(false)
 
 async function load() {
   await refresh()
   orders.value = await $fetch<OrderRow[]>('/api/orders').catch(() => [])
+  loaded.value = true
 }
-onMounted(load)
+onMounted(async () => {
+  await load()
+  // Opened from the header's coin chip: bring the wallet into view once it's drawn
+  if (route.hash === '#wallet') {
+    await nextTick()
+    document.getElementById('wallet')?.scrollIntoView({ block: 'start' })
+  }
+})
 watch(() => viewer.value?.id, load)
 
 const vipUntil = computed(() => (wallet.value?.vipUntil ? new Date(wallet.value.vipUntil) : null))
-// Seven dots: days of the current week-long streak, today's included once checked in
+// The week of the streak: days already collected, today's (next) day, and day 7 that pays double
 const streakDots = computed(() => {
   const w = wallet.value
   if (!w) return 0
   const done = w.checkIn.streak % 7 || (w.checkIn.streak ? 7 : 0)
   return w.checkIn.doneToday ? done : done % 7
 })
+const todayDot = computed(() => (wallet.value?.checkIn.doneToday ? streakDots.value : streakDots.value + 1))
+const base = computed(() => (wallet.value ? (todayDot.value === 7 ? wallet.value.checkIn.nextReward / 2 : wallet.value.checkIn.nextReward) : 0))
+const bonus = computed(() => wallet.value?.firstTopUpBonusPercent ?? 0)
+const withBonus = (coins: number) => coins + Math.floor((coins * bonus.value) / 100)
 
 async function onCheckIn() {
   busy.value = true
   try {
     const before = wallet.value?.coins ?? 0
     const w = await checkIn()
-    show(`ចុះឈ្មោះប្រចាំថ្ងៃ · +${kh(w.coins - before)} កាក់`)
+    success(`ចុះឈ្មោះប្រចាំថ្ងៃ · +${kh(w.coins - before)} កាក់ · ${kh(w.checkIn.streak)} ថ្ងៃជាប់គ្នា`)
   } catch (err) {
-    show(paymentError(err))
+    fail(paymentError(err))
   } finally {
     busy.value = false
   }
@@ -55,7 +71,6 @@ async function onCheckIn() {
 async function onPaid() {
   paying.value = null
   await load()
-  show('បានបញ្ចូលកាក់')
 }
 
 const statusLabel: Record<OrderRow['status'], string> = {
@@ -65,11 +80,11 @@ const statusLabel: Record<OrderRow['status'], string> = {
   CANCELLED: 'បោះបង់'
 }
 const what = (o: OrderRow) =>
-  o.kind === 'COINS' ? `កាក់ ${kh(o.coins ?? 0)}` : o.kind === 'VIP' ? `VIP ${kh(o.months ?? 0)} ខែ` : `រឿង “${o.seriesTitle ?? ''}”`
+  o.kind === 'COINS' ? `កាក់ ${kh(o.coins ?? 0)}${o.bonusCoins ? ` + ${kh(o.bonusCoins)}` : ''}` : o.kind === 'VIP' ? `VIP ${kh(o.months ?? 0)} ខែ` : `រឿង “${o.seriesTitle ?? ''}”`
 </script>
 
 <template>
-  <section v-if="viewer && wallet" class="wallet" aria-labelledby="wallet-title">
+  <section v-if="viewer && wallet" id="wallet" class="wallet" aria-labelledby="wallet-title">
     <h2 id="wallet-title">កាបូប</h2>
 
     <div class="cards">
@@ -92,15 +107,25 @@ const what = (o: OrderRow) =>
       <div>
         <strong>ចុះឈ្មោះប្រចាំថ្ងៃ</strong>
         <span class="sub">មករាល់ថ្ងៃ ទទួលកាក់ឥតគិតថ្លៃ · ថ្ងៃទី ៧ ទទួលទ្វេដង</span>
-        <span class="dots" :aria-label="`${streakDots} ថ្ងៃជាប់គ្នា`">
-          <span v-for="d in 7" :key="d" class="dot" :class="{ on: d <= streakDots }" />
-        </span>
+        <ol class="week" :aria-label="`${kh(streakDots)} ថ្ងៃជាប់គ្នា ក្នុងសប្តាហ៍នេះ`">
+          <li v-for="d in 7" :key="d" class="day" :class="{ on: d <= streakDots, today: d === todayDot && !wallet.checkIn.doneToday, big: d === 7 }">
+            <span class="ring">
+              <AppIcon v-if="d <= streakDots" name="check" :size="14" />
+              <AppIcon v-else-if="d === 7" name="gift" :size="14" />
+              <template v-else>+{{ kh(base) }}</template>
+            </span>
+            <small>{{ d === 7 ? '×២' : `ថ្ងៃ${kh(d)}` }}</small>
+          </li>
+        </ol>
       </div>
       <button type="button" class="btn btn-primary" :disabled="busy || wallet.checkIn.doneToday" @click="onCheckIn">
         {{ wallet.checkIn.doneToday ? 'បានទទួលហើយថ្ងៃនេះ' : `ទទួល +${kh(wallet.checkIn.nextReward)}` }}
       </button>
     </div>
 
+    <p v-if="wallet.paymentsOn && bonus" class="first-bonus">
+      <AppIcon name="gift" :size="18" /> ការទិញកាក់លើកដំបូង ទទួលបានកាក់បន្ថែម <strong>+{{ kh(bonus) }}%</strong>
+    </p>
     <div v-if="wallet.paymentsOn" class="packs">
       <button
         v-for="p in prices.coinPacks"
@@ -110,6 +135,7 @@ const what = (o: OrderRow) =>
         @click="paying = { product: { kind: 'COINS', coins: p.coins }, label: `ទិញកាក់ ${kh(p.coins)}` }"
       >
         <strong><AppIcon name="coin" :size="18" /> {{ kh(p.coins) }}</strong>
+        <small v-if="bonus" class="extra">+{{ kh(withBonus(p.coins) - p.coins) }} បន្ថែម</small>
         <span>${{ p.price.toFixed(2) }}</span>
       </button>
     </div>
@@ -125,7 +151,22 @@ const what = (o: OrderRow) =>
       </ul>
     </details>
 
-    <KhqrPay v-if="paying" :product="paying.product" :label="paying.label" @paid="onPaid" @close="paying = null; load()" />
+    <KhqrPay
+      v-if="paying"
+      :product="paying.product"
+      :label="paying.label"
+      done-label="រួចរាល់"
+      @paid="onPaid"
+      @close="paying = null; load()"
+    />
+  </section>
+  <section v-else-if="viewer && !loaded" class="wallet" aria-busy="true" aria-label="កំពុងផ្ទុកកាបូប">
+    <h2>កាបូប</h2>
+    <div class="cards">
+      <span class="sk shimmer" />
+      <span class="sk shimmer" />
+    </div>
+    <span class="sk tall shimmer" />
   </section>
 </template>
 
@@ -186,21 +227,84 @@ h2 {
   gap: 4px;
 }
 
-.dots {
+.week {
   display: flex;
   gap: 6px;
-  margin-top: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.dot {
-  width: 10px;
-  height: 10px;
+.day {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.ring {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  background: var(--border);
+  border: 1.5px dashed var(--border);
+  font-size: 11px;
+  font-weight: 700;
 }
 
-.dot.on {
+.day.on .ring {
+  border: 0;
   background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.day.today .ring {
+  border: 2px solid var(--accent);
+  color: var(--text-strong);
+}
+
+.day.big .ring {
+  border-color: #ffb800;
+  color: #ffb800;
+}
+
+.day.big.on .ring {
+  background: linear-gradient(135deg, #ffe26a, #ffb800);
+  color: #3a2600;
+}
+
+.first-bonus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(47, 191, 113, 0.12);
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.first-bonus svg {
+  color: #2fbf71;
+}
+
+.extra {
+  color: #2fbf71;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sk {
+  display: block;
+  height: 86px;
+  border-radius: 14px;
+}
+
+.sk.tall {
+  height: 104px;
 }
 
 .packs {

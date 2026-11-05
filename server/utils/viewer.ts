@@ -115,6 +115,7 @@ export function viewerIdentity(identity: {
 export async function signIn(event: H3Event, viewer: Viewer, viaProvider = false) {
   const session = await viewerSession(event)
   await session.update({ viewerId: viewer.id, version: viewer.sessionVersion, providerAt: viaProvider ? Date.now() : undefined })
+  await claimInvite(event, viewer.id)
 }
 
 /** Whether this session may set a new password without the old one ("forgot password") */

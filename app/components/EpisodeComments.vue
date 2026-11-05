@@ -7,12 +7,19 @@ interface CommentItem {
   createdAt: string
   author: { displayName: string; photoUrl: string | null }
   mine: boolean
+  likes: number
+  liked: boolean
+  pinned: boolean
+  /** Written by RuengFlix (admin portal) */
+  official?: boolean
+  replies?: CommentItem[]
 }
 
 const props = defineProps<{ seriesId: number; ep: number }>()
+const emit = defineEmits<{ count: [number] }>()
 
 const { viewer, enabled: accountsOn } = useViewer()
-const { show } = useToast()
+const { show, success, fail } = useToast()
 const route = useRoute()
 
 const items = ref<CommentItem[]>([])
@@ -22,6 +29,8 @@ const busy = ref(false)
 const error = ref('')
 const reported = ref(new Set<number>())
 const MAX = 500
+const liking = ref(new Set<number>())
+watch(total, n => emit('count', n), { immediate: true })
 
 async function load() {
   try {
@@ -41,11 +50,15 @@ async function post() {
   busy.value = true
   try {
     const c = await $fetch<CommentItem>('/api/comments', { method: 'POST', body: { seriesId: props.seriesId, episode: props.ep, body } })
-    items.value = [c, ...items.value]
+    // Below the pinned one, above the rest
+    const pins = items.value.filter(x => x.pinned)
+    items.value = [...pins, c, ...items.value.filter(x => !x.pinned)]
     total.value++
     draft.value = ''
+    haptic('success')
   } catch (err) {
     error.value = paymentError(err)
+    haptic('error')
   } finally {
     busy.value = false
   }
@@ -56,8 +69,36 @@ async function remove(c: CommentItem) {
     await $fetch(`/api/comments/${c.id}`, { method: 'DELETE' })
     items.value = items.value.filter(x => x.id !== c.id)
     total.value--
+    show('បានលុបមតិ')
   } catch (err) {
-    show(paymentError(err))
+    fail(paymentError(err))
+  }
+}
+
+// Optimistic: the heart changes at once and goes back if the server says no
+async function toggleLike(c: CommentItem) {
+  if (!viewer.value) {
+    show('ចូលគណនីដើម្បីចូលចិត្តមតិ')
+    return
+  }
+  if (liking.value.has(c.id)) return
+  liking.value = new Set([...liking.value, c.id])
+  const like = !c.liked
+  c.liked = like
+  c.likes += like ? 1 : -1
+  haptic('tap')
+  try {
+    const r = await $fetch<{ likes: number; liked: boolean }>(`/api/comments/${c.id}/like`, { method: 'PUT', body: { like } })
+    c.likes = r.likes
+    c.liked = r.liked
+  } catch (err) {
+    c.liked = !like
+    c.likes += like ? -1 : 1
+    fail(paymentError(err))
+  } finally {
+    const next = new Set(liking.value)
+    next.delete(c.id)
+    liking.value = next
   }
 }
 
@@ -65,9 +106,9 @@ async function report(c: CommentItem) {
   try {
     await $fetch(`/api/comments/${c.id}/report`, { method: 'POST' })
     reported.value = new Set([...reported.value, c.id])
-    show('អរគុណ · យើងនឹងពិនិត្យមតិនេះ')
+    success('អរគុណ · យើងនឹងពិនិត្យមតិនេះ')
   } catch (err) {
-    show(paymentError(err))
+    fail(paymentError(err))
   }
 }
 
@@ -81,7 +122,7 @@ const ago = (iso: string) => {
 </script>
 
 <template>
-  <section class="comments" aria-labelledby="comments-title">
+  <section id="comments" class="comments" aria-labelledby="comments-title">
     <h2 id="comments-title"><AppIcon name="comment" :size="20" /> មតិ <span class="count">{{ kh(total) }}</span></h2>
 
     <form v-if="viewer" class="write" @submit.prevent="post">
@@ -104,13 +145,33 @@ const ago = (iso: string) => {
     </p>
 
     <ul v-if="items.length" class="list">
-      <li v-for="c in items" :key="c.id">
-        <img v-if="c.author.photoUrl" :src="c.author.photoUrl" alt="" class="avatar" width="32" height="32" referrerpolicy="no-referrer">
+      <li v-for="c in items" :key="c.id" :class="{ pinned: c.pinned }">
+        <img loading="lazy" decoding="async" v-if="c.author.photoUrl" :src="c.author.photoUrl" alt="" class="avatar" width="32" height="32" referrerpolicy="no-referrer">
         <span v-else class="avatar initial" aria-hidden="true">{{ c.author.displayName.slice(0, 1) }}</span>
         <div class="body">
+          <p v-if="c.pinned" class="pin"><AppIcon name="pin" :size="12" /> ខ្ទាស់ដោយ RuengFlix</p>
           <p class="meta"><strong>{{ c.author.displayName }}</strong> · {{ ago(c.createdAt) }}</p>
           <p class="text">{{ c.body }}</p>
+          <ul v-if="c.replies?.length" class="replies">
+            <li v-for="r in c.replies" :key="r.id">
+              <span class="avatar official-mark" aria-hidden="true">R</span>
+              <div>
+                <p class="meta"><strong>RuengFlix</strong> <span class="badge"><AppIcon name="check" :size="11" /> ផ្លូវការ</span> · {{ ago(r.createdAt) }}</p>
+                <p class="text">{{ r.body }}</p>
+              </div>
+            </li>
+          </ul>
           <div class="acts">
+            <button
+              type="button"
+              class="like"
+              :class="{ on: c.liked }"
+              :aria-pressed="c.liked"
+              :aria-label="`ចូលចិត្ត · ${kh(c.likes)}`"
+              @click="toggleLike(c)"
+            >
+              <AppIcon name="heart" :size="15" :solid="c.liked" /> <span v-if="c.likes">{{ kh(c.likes) }}</span>
+            </button>
             <button v-if="c.mine" type="button" @click="remove(c)">លុប</button>
             <button v-else-if="viewer && !reported.has(c.id)" type="button" @click="report(c)">រាយការណ៍</button>
           </div>
@@ -228,6 +289,39 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.acts {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.like {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+}
+
+.like.on {
+  color: #e5484d !important;
+}
+
+.pinned {
+  margin: 0 -10px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--bg-elev);
+}
+
+.pin {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 2px;
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .acts button {
   min-height: 32px;
   padding: 0;
@@ -242,5 +336,42 @@ textarea {
 .error {
   margin: 0;
   color: #ff6b6b;
+}
+
+.replies {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 4px;
+  padding: 8px 0 0 12px;
+  border-left: 2px solid var(--accent);
+  list-style: none;
+}
+
+.replies li {
+  display: flex;
+  gap: 8px;
+}
+
+.official-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 700;
 }
 </style>

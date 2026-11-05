@@ -13,6 +13,16 @@ export interface PlayerPrefs {
   speed: number
   captions: boolean
   dataSaver: 'auto' | 'on' | 'off'
+  /** Subtitle text size; Khmer script needs more room than Latin on phones */
+  captionSize?: 's' | 'm' | 'l' | 'xl'
+  /** Box behind subtitles */
+  captionBg?: 'none' | 'soft' | 'solid'
+  /** Lower (default) or higher, clear of burned-in text */
+  captionPos?: 'low' | 'high'
+  /** Genres picked on the first visit, for "For you" before there's any watching to go on */
+  genres?: string[]
+  /** The first-visit genre picker was answered or skipped */
+  onboarded?: boolean
 }
 
 // Per-viewer state kept in localStorage; the library.client plugin loads and persists it.
@@ -23,7 +33,14 @@ export function useLibrary() {
   const recentSearches = useState<string[]>('library-searches', () => [])
   const following = useState<number[]>('library-following', () => [])
   const unlocked = useState<number[]>('library-unlocked', () => [])
-  const prefs = useState<PlayerPrefs>('library-prefs', () => ({ speed: 1, captions: true, dataSaver: 'auto' }))
+  const prefs = useState<PlayerPrefs>('library-prefs', () => ({
+    speed: 1,
+    captions: true,
+    dataSaver: 'auto',
+    captionSize: 'm',
+    captionBg: 'soft',
+    captionPos: 'low'
+  }))
   /** Episode count each followed series had when last opened; anything above it is "new" */
   const seen = useState<Record<number, number>>('library-seen', () => ({}))
   /** This viewer's vote per episode, keyed "seriesId:ep" */
@@ -98,6 +115,26 @@ export function useLibrary() {
   const totalNew = computed(() => following.value.reduce((n, id) => n + newEpisodes(id), 0))
 
   /**
+   * Has something this viewer hasn't seen: new episodes in a followed series, or episodes published
+   * after they last watched a series they've started and not caught up on
+   */
+  function hasNew(id: number) {
+    if (newEpisodes(id)) return true
+    const m = find(id)
+    const h = history.value.find(x => x.id === id)
+    return !!m && !!h && m.updatedAt > h.at && m.episodes > h.ep
+  }
+
+  /** "New for you" on the home page: followed or started series with unseen episodes, newest first */
+  const newForYou = computed(() => {
+    const ids = [...new Set([...following.value, ...history.value.map(h => h.id)])]
+    return ids
+      .filter(hasNew)
+      .map(id => find(id)!)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+  })
+
+  /**
    * Free episodes, or VIP episodes this viewer paid for. For movie-api series only the server's answer
    * counts (useSeriesEpisodes); the sample series use this browser's unlock list.
    */
@@ -155,6 +192,8 @@ export function useLibrary() {
     markSeen,
     newEpisodes,
     totalNew,
+    hasNew,
+    newForYou,
     continueWatching,
     recordWatch,
     saveProgress,

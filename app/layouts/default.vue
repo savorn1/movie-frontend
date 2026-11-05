@@ -9,6 +9,7 @@ const route = useRoute()
     <AppSidebar />
     <main class="main" :class="{ immersive: route.meta.hideFooter }">
       <InAppBanner />
+      <ClientOnly><AccountNotices /></ClientOnly>
       <slot />
       <footer v-if="!route.meta.hideFooter" class="site-footer">
         <div class="foot-logo display">RuengFlix</div>
@@ -24,6 +25,9 @@ const route = useRoute()
     </main>
     <FixedGroup />
     <ToastHost />
+    <ClientOnly><PushPrompt /></ClientOnly>
+    <ClientOnly><MiniPlayer /></ClientOnly>
+    <ClientOnly><PullToRefresh /></ClientOnly>
     <MobileTabBar />
   </div>
 </template>

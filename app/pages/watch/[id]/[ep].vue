@@ -28,13 +28,21 @@ const playable = computed(() => {
   const episodes = episodesOf(m.id) ?? []
   const sources = Object.fromEntries(episodes.filter(e => e.videoUrl).map(e => [e.number, e.videoUrl!]))
   const subtitled = Object.fromEntries(episodes.map(e => [e.number, e.hasSubtitles]))
-  return { ...m, sources, subtitled }
+  const previews = Object.fromEntries(episodes.filter(e => e.preview).map(e => [e.number, e.preview!]))
+  return { ...m, sources, subtitled, previews }
 })
 const playerReady = computed(() => !movie.value!.remote || episodesStatus.value === 'success')
 
 const { canWatch } = useLibrary()
 const { share } = useShare()
 const ambient = useAmbientColor(() => movie.value?.poster)
+
+// Shown on the comments button next to Share; tapping it scrolls down to them
+const commentCount = ref(0)
+watch(ep, () => (commentCount.value = 0))
+function toComments() {
+  document.getElementById('comments')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
+}
 
 const similar = computed(() => byCategory(movie.value!.category).filter(m => m.id !== movie.value!.id))
 
@@ -78,6 +86,12 @@ usePageMeta(() => ({
               <FollowButton :movie="movie" />
               <SaveButton :movie-id="movie.id" />
             </ClientOnly>
+            <ActionButton
+              v-if="movie.remote"
+              icon="comment"
+              :label="commentCount ? `មតិ ${kh(commentCount)}` : 'មតិ'"
+              @click="toComments"
+            />
             <ActionButton icon="share" label="ចែករំលែក" @click="share(`${movie.title} វគ្គ ${kh(ep)}`, `/watch/${movie.id}/${ep}`)" />
           </div>
         </div>
@@ -96,14 +110,14 @@ usePageMeta(() => ({
         </details>
 
         <ClientOnly>
-          <EpisodeComments v-if="movie.remote" :series-id="movie.id" :ep="ep" />
+          <EpisodeComments v-if="movie.remote" :series-id="movie.id" :ep="ep" @count="commentCount = $event" />
         </ClientOnly>
       </div>
 
       <aside class="side">
         <ClientOnly>
           <NuxtLink v-if="nextEp" :to="`/watch/${movie.id}/${nextEp}`" class="up-next">
-            <img :src="movie.poster" alt="">
+            <img loading="lazy" decoding="async" :src="movie.poster" alt="">
             <span class="un-text">
               <small>{{ nextLocked ? 'វគ្គបន្ទាប់ · VIP' : 'វគ្គបន្ទាប់' }}</small>
               <strong>វគ្គ {{ kh(nextEp) }}</strong>
@@ -112,7 +126,7 @@ usePageMeta(() => ({
             <AppIcon :name="nextLocked ? 'lock' : 'play'" :size="18" class="un-icon" />
           </NuxtLink>
           <NuxtLink v-else-if="nextSeries" :to="`/detail/${nextSeries.id}`" class="up-next">
-            <img :src="nextSeries.poster" alt="">
+            <img loading="lazy" decoding="async" :src="nextSeries.poster" alt="">
             <span class="un-text">
               <small>ចប់រឿងហើយ · រឿងបន្ទាប់</small>
               <strong>{{ nextSeries.title }}</strong>

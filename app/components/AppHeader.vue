@@ -11,6 +11,11 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
 const solid = computed(() => scrolled.value || route.path !== '/')
 const { viewer, enabled, known } = useViewer()
 const onAuthPage = computed(() => route.path === '/login' || route.path === '/register')
+
+// Coin balance next to the account, so viewers see what they can spend; tapping opens the wallet
+const { wallet, refresh: refreshWallet } = useWallet()
+watch(() => viewer.value?.id, (id) => id && !wallet.value && refreshWallet(), { immediate: true })
+const checkInWaiting = computed(() => !!wallet.value && !wallet.value.checkIn.doneToday)
 </script>
 
 <template>
@@ -28,6 +33,15 @@ const onAuthPage = computed(() => route.path === '/login' || route.path === '/re
       </NuxtLink>
       <ThemeSwitcher class="theme" />
       <template v-if="known && enabled">
+        <NuxtLink
+          v-if="viewer && wallet"
+          to="/library#wallet"
+          class="coin-chip"
+          :aria-label="`កាក់ ${kh(wallet.coins)}${checkInWaiting ? ' · មានកាក់ឥតគិតថ្លៃថ្ងៃនេះ' : ''}`"
+        >
+          <AppIcon name="coin" :size="16" /><span>{{ kh(wallet.coins) }}</span>
+          <i v-if="checkInWaiting" class="dot" aria-hidden="true" />
+        </NuxtLink>
         <NuxtLink v-if="viewer" to="/library" class="op-btn account" :aria-label="`គណនី ${viewer.displayName}`">
           <AppIcon name="user" :size="20" /><span>{{ viewer.displayName }}</span>
         </NuxtLink>
@@ -154,6 +168,42 @@ const onAuthPage = computed(() => route.path === '/login' || route.path === '/re
 
 .login:hover {
   background: var(--bg-hover);
+}
+
+.coin-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.coin-chip svg {
+  color: var(--accent-text);
+}
+
+.coin-chip:hover {
+  background: var(--bg-hover);
+}
+
+/* Today's check-in hasn't been collected */
+.coin-chip .dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e5484d;
+  box-shadow: 0 0 0 2px var(--bg);
 }
 
 .vip-pill {
