@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'private, no-store')
   const seriesId = Number(getRouterParam(event, 'id'))
   // The storage address stays on the server: the player gets a short-lived /media link (utils/mediaGuard)
-  const guarded = (url: string | null, ep: number, kind: 'full' | 'preview', premium: boolean) =>
+  const guarded = (url: string | null, ep: number, kind: 'full' | 'preview' | 'dub', premium: boolean) =>
     !url ? null : isPlaylist(url) ? url : mediaLink(event, { s: seriesId, e: ep, k: kind, ...(premium && viewer ? { v: viewer.id } : {}) })
   return episodes.map(e => ({
     number: e.number,
@@ -24,6 +24,7 @@ export default defineEventHandler(async (event) => {
     videoUrl: guarded(e.videoUrl, e.number, 'full', !!(e.premium ?? e.locked)),
     hasSubtitles: !!e.subtitlesUrl,
     preview: e.preview ? { url: guarded(e.preview.url, e.number, 'preview', false)!, seconds: e.preview.seconds } : null,
+    dubUrl: guarded(e.dubUrl ?? null, e.number, 'dub', !!(e.premium ?? e.locked)),
     /** When these links stop working; the player asks for fresh ones before then */
     linksExpireAt: Date.now() + TOKEN_MINUTES * 60_000
   }))

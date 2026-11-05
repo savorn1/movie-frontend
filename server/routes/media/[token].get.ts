@@ -16,12 +16,12 @@ interface Upstream {
 const upstreams = new Map<string, Upstream>()
 const UPSTREAM_MS = 5 * 60_000
 
-async function upstreamFor(seriesId: number, ep: number, kind: 'full' | 'preview', viewerId?: number): Promise<Upstream | null> {
+async function upstreamFor(seriesId: number, ep: number, kind: 'full' | 'preview' | 'dub', viewerId?: number): Promise<Upstream | null> {
   const cacheKey = `${viewerId ?? 'anon'}:${seriesId}:${ep}:${kind}`
   const hit = upstreams.get(cacheKey)
   if (hit && Date.now() - hit.at < UPSTREAM_MS) return hit
   const episode = (await apiEpisodes(seriesId, viewerId))?.find(e => e.number === ep)
-  const url = kind === 'full' ? episode?.videoUrl : episode?.preview?.url
+  const url = kind === 'full' ? episode?.videoUrl : kind === 'dub' ? episode?.dubUrl : episode?.preview?.url
   if (!episode || !url) return null
   const up: Upstream = { url, durationSeconds: episode.durationSeconds, previewSeconds: episode.preview?.seconds ?? null, at: Date.now() }
   if (upstreams.size > 5000) upstreams.clear()

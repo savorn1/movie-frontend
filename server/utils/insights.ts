@@ -28,11 +28,13 @@ export async function getInsights(seriesId: number): Promise<Record<string, Epis
   return (await useStorage('insights').getItem<Record<string, EpisodeStats>>(key(seriesId))) ?? {}
 }
 
-export async function recordPlay(seriesId: number, ep: number, kind: 'start' | 'complete') {
+export async function recordPlay(seriesId: number, ep: number, kind: 'start' | 'complete' | 'wall') {
   if (movieApiEnabled()) {
     await apiCall('POST', '/plays', { seriesId, episode: ep, event: kind.toUpperCase() })
     return
   }
+  // Without movie-api only plays are kept (the sample series have no paywall analytics)
+  if (kind === 'wall') return
   const all = await getInsights(seriesId)
   const s = all[ep] ?? { starts: 0, completes: 0 }
   if (kind === 'start') s.starts++

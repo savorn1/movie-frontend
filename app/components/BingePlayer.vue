@@ -37,6 +37,20 @@ const previewLeft = computed(() => (preview.value ? Math.max(0, Math.ceil(previe
 const skipHint = ref<{ side: 'left' | 'right'; key: number } | null>(null)
 const isFullscreen = ref(false)
 const moreOpen = ref(false)
+/*
+ * The "More" panel opens upwards from the bar; it may hold more than fits above it (a 16:9 player on a
+ * laptop), so it gets the room between the bar and the top of the player and scrolls inside that,
+ * instead of running up under the site header where nothing can be tapped.
+ */
+const moreButton = ref<HTMLElement>()
+const moreMax = ref<number | null>(null)
+watch(moreOpen, async (open) => {
+  if (!open) return
+  await nextTick()
+  const player = wrap.value?.getBoundingClientRect()
+  const button = moreButton.value?.getBoundingClientRect()
+  if (player && button) moreMax.value = Math.max(160, button.top - Math.max(player.top, 64) - 16)
+})
 const reporting = ref(false)
 const pipSupported = ref(false)
 const inPip = ref(false)
@@ -178,6 +192,9 @@ function onTimeUpdate() {
   const el = video.value
   if (!el) return
   current.value = el.currentTime
+  moment.value = { seriesId: props.movie.id, ep: props.ep, time: el.currentTime }
+  emitDanmaku(el.currentTime)
+  syncDub()
   if (el.buffered.length) bufferedEnd.value = el.buffered.end(el.buffered.length - 1)
   if (preview.value) {
     // The opening is over (or was skipped past): pause on this frame and offer to unlock
@@ -502,6 +519,12 @@ function onScrub(e: Event) {
 function toggleMute() {
   const el = video.value
   if (!el) return
+  if (dubOn.value) {
+    // The video stays silent under the voice track: mute the track instead
+    muted.value = !muted.value
+    if (dubAudio.value) dubAudio.value.muted = muted.value
+    return
+  }
   el.muted = !el.muted
   muted.value = el.muted
 }
@@ -755,16 +778,20 @@ const infoTop = ref<number | null>(null)
 /** Where the picture ends, in % of the player's height (for subtitles), while the panel shows */
 const pictureBottom = ref<number | null>(null)
 let infoObserver: ResizeObserver | undefined
+/** Where the picture starts inside the player (px), for the floating comments */
+const pictureTop = ref(0)
 function measureInfo() {
   const el = wrap.value
-  if (!el || !window.matchMedia('(max-width: 768px) and (orientation: portrait)').matches) {
+  if (!el) return
+  const v = video.value
+  const aspect = v?.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9
+  const videoH = Math.min(el.clientHeight, el.clientWidth / aspect)
+  pictureTop.value = Math.max(0, (el.clientHeight - videoH) / 2)
+  if (!window.matchMedia('(max-width: 768px) and (orientation: portrait)').matches) {
     infoTop.value = null
     pictureBottom.value = null
     return
   }
-  const v = video.value
-  const aspect = v?.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9
-  const videoH = Math.min(el.clientHeight, el.clientWidth / aspect)
   const below = (el.clientHeight - videoH) / 2
   infoTop.value = below >= 260 ? Math.round(el.clientHeight / 2 + videoH / 2 + 14) : null
   pictureBottom.value = infoTop.value === null ? null : ((el.clientHeight / 2 + videoH / 2) / el.clientHeight) * 100
@@ -805,6 +832,123 @@ async function openComments() {
 function onCommentsClosed() {
   commentsOpen.value = false
   loadTopComments()
+  loadTimed()
+}
+
+// ---------- Khmer voice-over ----------
+/*
+ * An episode with a Khmer voice track (made or uploaded in VideoLingo) can play it instead of the
+ * original sound: the video goes silent and a hidden <audio> follows it (play, pause, seek, speed,
+ * buffering), corrected whenever it drifts more than a third of a second.
+ */
+const dubSrc = computed(() => props.movie.dubs?.[props.ep] ?? '')
+const dubOn = computed(() => !!dubSrc.value && prefs.value.voice === 'km' && !preview.value && !wallEp.value)
+const dubAudio = ref<HTMLAudioElement>()
+function syncDub(hard = false) {
+  const a = dubAudio.value
+  const v = video.value
+  if (!a || !v || !dubOn.value) return
+  if (Math.abs(a.currentTime - v.currentTime) > (hard ? 0.05 : 0.35)) a.currentTime = v.currentTime
+  if (a.playbackRate !== v.playbackRate) a.playbackRate = v.playbackRate
+  a.muted = muted.value
+  if (v.paused || v.ended || waiting.value) {
+    if (!a.paused) a.pause()
+  } else if (a.paused) {
+    a.play().catch(() => {})
+  }
+}
+watch(dubOn, (on) => {
+  const v = video.value
+  if (!v) return
+  if (on) {
+    v.muted = true
+    nextTick(() => syncDub(true))
+  } else {
+    dubAudio.value?.pause()
+    v.muted = muted.value
+  }
+})
+const onDubEvent = () => syncDub(true)
+onMounted(() => {
+  for (const e of ['play', 'pause', 'seeked', 'ratechange', 'waiting', 'playing']) video.value?.addEventListener(e, onDubEvent)
+})
+onBeforeUnmount(() => {
+  for (const e of ['play', 'pause', 'seeked', 'ratechange', 'waiting', 'playing']) video.value?.removeEventListener(e, onDubEvent)
+})
+function setVoice(v: 'original' | 'km') {
+  prefs.value.voice = v
+  show(v === 'km' ? 'សំឡេងខ្មែរ' : 'សំឡេងដើម')
+}
+
+// ---------- Floating comments (danmaku) ----------
+/*
+ * Comments written at a moment of this episode drift across the top of the picture when playback
+ * reaches that second: three lanes, one new line per lane every ~2 s, the rest skipped (never a wall
+ * of text). Off in the More panel, and with Reduce motion.
+ */
+interface Timed { id: number; at: number; body: string }
+const timed = ref<Timed[]>([])
+const flying = ref<(Timed & { lane: number; key: number })[]>([])
+const danmakuOn = computed(() => prefs.value.danmaku !== false && !!props.movie.remote && !wallEp.value && !preview.value && !reducedMotion())
+let lastDanmakuT = 0
+let danmakuKey = 0
+const laneFreeAt = [0, 0, 0]
+async function loadTimed() {
+  if (!import.meta.client || !props.movie.remote) return
+  timed.value = await $fetch<Timed[]>('/api/comments/timed', { query: { series: props.movie.id, ep: props.ep } }).catch(() => [])
+}
+watch(() => props.ep, () => {
+  flying.value = []
+  lastDanmakuT = 0
+  loadTimed()
+}, { immediate: true })
+function emitDanmaku(t: number) {
+  // Jumps (seeking, a new episode) start fresh instead of bursting everything in between
+  if (!danmakuOn.value || !playing.value || t < lastDanmakuT || t - lastDanmakuT > 2) {
+    lastDanmakuT = t
+    return
+  }
+  const now = Date.now()
+  for (const c of timed.value) {
+    if (c.at <= lastDanmakuT || c.at > t) continue
+    const lane = laneFreeAt.findIndex(free => free <= now)
+    if (lane < 0) break
+    laneFreeAt[lane] = now + 2200
+    const key = ++danmakuKey
+    flying.value = [...flying.value.slice(-11), { ...c, lane, key }]
+    setTimeout(() => (flying.value = flying.value.filter(f => f.key !== key)), 8500)
+  }
+  lastDanmakuT = t
+}
+function toggleDanmaku() {
+  prefs.value.danmaku = prefs.value.danmaku === false
+  if (!prefs.value.danmaku) flying.value = []
+  show(prefs.value.danmaku ? 'បើកមតិអណ្តែត' : 'បិទមតិអណ្តែត')
+}
+
+// ---------- Where the player is, for comments ----------
+// Comments written now keep this second; "2:15" links in comments jump the player here
+const moment = useState<{ seriesId: number; ep: number; time: number } | null>('player-moment', () => null)
+const seekTo = useState<number | null>('player-seek', () => null)
+watch(seekTo, (t) => {
+  if (t == null || !video.value || wallEp.value) return
+  video.value.currentTime = t
+  seekTo.value = null
+  reveal()
+  if (commentsSheet.value?.open) commentsSheet.value.close()
+})
+onBeforeUnmount(() => (moment.value = null))
+
+// ---------- Paywall analytics ----------
+// Counted once per device and episode, like plays (useInsights)
+watch(() => wallEp.value, (n) => n && track(props.movie.id, n, 'wall'))
+
+// ---------- Share a clip ----------
+const clipping = ref(false)
+function openClip() {
+  moreOpen.value = false
+  video.value?.pause()
+  clipping.value = true
 }
 
 /** The video fades in after an unlock instead of popping */
@@ -851,10 +995,25 @@ function onUnlocked() {
       draggable="false"
       @waiting="waiting = true"
       @playing="waiting = false"
-      @volumechange="muted = video!.muted"
+      @volumechange="!dubOn && (muted = video!.muted)"
     >
       <track v-if="source.subtitles" kind="subtitles" srclang="km" label="ខ្មែរ" :src="source.subtitles" default @load="liftCues">
     </video>
+
+    <!-- Khmer voice-over, following the (silent) video -->
+    <audio
+      v-if="dubSrc && prefs.voice === 'km'"
+      ref="dubAudio"
+      :src="dubSrc"
+      preload="auto"
+      aria-hidden="true"
+      @canplay="syncDub(true)"
+      @error="onVideoError"
+    />
+
+    <div v-if="danmakuOn && flying.length" class="danmaku" :style="{ top: `${pictureTop + 8}px` }" aria-hidden="true">
+      <span v-for="f in flying" :key="f.key" :style="{ top: `${f.lane * 30}px` }">{{ f.body }}</span>
+    </div>
 
     <span v-if="watermark" class="watermark" :style="WATERMARK_SPOTS[watermarkSpot]" aria-hidden="true">{{ watermark }}</span>
 
@@ -1034,6 +1193,7 @@ function onUnlocked() {
         <!-- Less frequent actions live in a "More" panel so the bar stays usable on phones -->
         <div class="more-wrap">
           <button
+            ref="moreButton"
             type="button"
             class="icon-btn"
             aria-label="ជម្រើសបន្ថែម"
@@ -1043,9 +1203,23 @@ function onUnlocked() {
           >
             <AppIcon name="more" :size="22" />
           </button>
-          <div v-if="moreOpen" class="more-panel" role="group" aria-label="ជម្រើសបន្ថែម" @keydown.esc="moreOpen = false">
+          <div v-if="moreOpen" class="more-panel" role="group" aria-label="ជម្រើសបន្ថែម" :style="moreMax ? { maxHeight: `${moreMax}px` } : undefined" @keydown.esc="moreOpen = false">
             <button type="button" @click="shareMoment(); moreOpen = false">
               <AppIcon name="share" :size="18" />ចែករំលែកពេលនេះ
+            </button>
+            <button v-if="movie.remote && !preview" type="button" @click="openClip">
+              <AppIcon name="clip" :size="18" />ចែករំលែកឃ្លីប ១៥ វិនាទី
+            </button>
+            <label v-if="dubSrc" class="sleep">
+              <AppIcon name="voice" :size="18" />
+              <span>សំឡេង</span>
+              <select :value="prefs.voice ?? 'original'" @change="setVoice(($event.target as HTMLSelectElement).value as 'original' | 'km')">
+                <option value="original">ដើម</option>
+                <option value="km">ខ្មែរ (បញ្ចូលសំឡេង)</option>
+              </select>
+            </label>
+            <button v-if="movie.remote" type="button" :aria-pressed="prefs.danmaku !== false" @click="toggleDanmaku">
+              <AppIcon name="danmaku" :size="18" />{{ prefs.danmaku !== false ? 'បិទមតិអណ្តែត' : 'បើកមតិអណ្តែត' }}
             </button>
             <button v-if="pipSupported" type="button" @click="togglePip">
               <AppIcon name="pip" :size="18" />{{ inPip ? 'បិទរូបភាពក្នុងរូបភាព' : 'រូបភាពក្នុងរូបភាព' }}
@@ -1122,6 +1296,8 @@ function onUnlocked() {
     <button v-if="showSkipRecap && !moreOpen" type="button" class="skip-recap" @click.stop="skipRecap">
       <AppIcon name="skip" :size="16" />រំលងសង្ខេប
     </button>
+
+    <ClipShare v-if="clipping" :series-id="movie.id" :ep="ep" :at="current" :title="movie.title" @close="clipping = false" />
 
     <ReportDialog v-if="reporting" :series-id="movie.id" :ep="ep" :time="current" @close="reporting = false" />
 
@@ -1564,6 +1740,8 @@ function onUnlocked() {
   bottom: calc(100% + 8px);
   z-index: 6;
   display: grid;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   min-width: 230px;
   padding: 6px;
   border-radius: 14px;
@@ -1859,6 +2037,38 @@ function onUnlocked() {
 .comments-sheet .sheet-body {
   max-height: 82dvh;
   overflow-y: auto;
+}
+
+/* Comments floating across the top of the picture */
+.danmaku {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 92px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.danmaku span {
+  position: absolute;
+  left: 100%;
+  max-width: 80vw;
+  overflow: hidden;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 28px;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 2px #000;
+  white-space: nowrap;
+  animation: dm-fly 8s linear forwards;
+}
+
+@keyframes dm-fly {
+  to {
+    transform: translateX(calc(-100vw - 100%));
+  }
 }
 
 /* One-time "swipe up for the next episode" (phones), in the dark band above the picture */

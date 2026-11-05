@@ -83,6 +83,8 @@ function clearHistory() {
       <WalletPanel />
       <MissionsCard id="missions" class="me-card" />
       <InviteCard class="me-card" />
+      <FanCard class="me-card" />
+      <GiftCard class="me-card" />
     </ClientOnly>
 
     <section class="appearance">

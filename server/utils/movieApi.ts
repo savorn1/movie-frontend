@@ -1,4 +1,4 @@
-import { artworkFor, DEFAULT_PRICES, FREE_EPISODES, normalizeMovie, type Category, type Movie, type SitePrices } from '#shared/data/movies'
+import { artworkFor, DEFAULT_PRICES, FREE_EPISODES, normalizeMovie, type Category, type HomeRow, type Movie, type SitePrices } from '#shared/data/movies'
 
 /*
  * Client for movie-api (the Nest backend), the source of series, episodes and viewer data when
@@ -30,6 +30,9 @@ interface ApiSeries {
   nextEpisodeAt: string | null
   /** Hero slider place (1 first); null = not a hero pick */
   featuredRank: number | null
+  /** A promotion makes this VIP series free for everyone until then (ISO), with its banner title */
+  freeUntil?: string | null
+  promoTitle?: string | null
 }
 
 export interface ApiEpisode {
@@ -48,6 +51,8 @@ export interface ApiEpisode {
   subtitlesUrl: string | null
   /** The first VIP episode while locked: its opening, to watch before paying */
   preview?: { url: string; seconds: number } | null
+  /** Khmer voice-over track; null when locked or there is none */
+  dubUrl?: string | null
 }
 
 interface ApiDetail {
@@ -125,6 +130,8 @@ export function toMovie(s: ApiSeries): Movie {
     updatedAt: latest,
     nextEpisodeAt: toMs(s.nextEpisodeAt),
     featuredRank: s.featuredRank ?? null,
+    freeUntil: toMs(s.freeUntil ?? null),
+    promoTitle: s.promoTitle ?? null,
     remote: true
   })
 }
@@ -135,8 +142,10 @@ export function clearMovieApiCache() {
 }
 
 /** Prices set in videolingo-web; the defaults while movie-api has never answered */
-export async function apiSite(): Promise<{ prices: SitePrices }> {
-  return (await apiGet<{ prices: SitePrices }>('/site')) ?? { prices: DEFAULT_PRICES }
+export async function apiSite(): Promise<{ prices: SitePrices; homeRows: HomeRow[] }> {
+  const site = await apiGet<{ prices: SitePrices; homeRows?: HomeRow[] }>('/site')
+  // An older movie-api sends no rows: Home keeps its built-in ones
+  return { prices: site?.prices ?? DEFAULT_PRICES, homeRows: site?.homeRows ?? [] }
 }
 
 export async function apiSeriesList() {
@@ -177,6 +186,24 @@ export const apiCached = <T>(path: string) => apiGet<T>(path)
  * Viewer data endpoints (votes, plays, reports, follows, alerts), never cached.
  * 404 (series not listed, episode not released) passes through; anything else is a 502.
  */
+/**
+ * A movie-api call whose 4xx errors keep their status and `code` (for Khmer messages in the browser),
+ * like viewerApi but for paths outside /viewers (gifts, clips, promotions).
+ */
+export async function codedApi<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: object): Promise<T> {
+  try {
+    return (await $fetch(`${movieApiBase()}${path}`, { method, body, headers: authHeaders(), timeout: 8000 })) as T
+  } catch (err) {
+    const e = err as { statusCode?: number; data?: { code?: string; message?: string | string[] } }
+    if (e.statusCode && e.statusCode < 500) {
+      const message = Array.isArray(e.data?.message) ? e.data.message.join('; ') : (e.data?.message ?? 'Request failed')
+      throw createError({ statusCode: e.statusCode, message, data: { code: e.data?.code } })
+    }
+    console.warn(`[movie-api] ${method} ${path} failed:`, e.statusCode ?? (err as Error).message)
+    throw createError({ statusCode: 502, message: 'movie-api is unreachable', data: { code: 'UNREACHABLE' } })
+  }
+}
+
 export async function apiCall<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: object): Promise<T> {
   try {
     return (await $fetch(`${movieApiBase()}${path}`, { method, body, headers: authHeaders(), timeout: 5000 })) as T

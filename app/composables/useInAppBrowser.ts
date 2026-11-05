@@ -19,8 +19,10 @@ export function useInAppBrowser() {
   /** Read the user agent once on the client */
   function detect() {
     const ua = navigator.userAgent
+    // Opened as RuengFlix's own Telegram Mini App: not a stray in-app browser, nothing to escape from
+    const miniApp = useState('telegram-mini-app', () => false).value
     info.value = {
-      app: APPS.find(([re]) => re.test(ua))?.[1] ?? null,
+      app: miniApp ? null : (APPS.find(([re]) => re.test(ua))?.[1] ?? null),
       android: /Android/i.test(ua),
       ios: /iPhone|iPad|iPod/i.test(ua)
     }

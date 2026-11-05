@@ -5,7 +5,9 @@ interface CommentItem {
   id: number
   body: string
   createdAt: string
-  author: { displayName: string; photoUrl: string | null }
+  author: { displayName: string; photoUrl: string | null; level?: number; badges?: string[] }
+  /** Seconds into the episode it was written at (while watching) */
+  atSeconds?: number | null
   mine: boolean
   likes: number
   liked: boolean
@@ -45,13 +47,29 @@ async function load() {
 }
 watch(() => [props.seriesId, props.ep, viewer.value?.id], load, { immediate: true })
 
+/*
+ * Written while this episode plays: the comment keeps the moment, floats over the video for others
+ * at that second, and shows a "2:15" link that jumps there. The player publishes where it is.
+ */
+const moment = useState<{ seriesId: number; ep: number; time: number } | null>('player-moment', () => null)
+const seekTo = useState<number | null>('player-seek', () => null)
+const atNow = () => {
+  const m = moment.value
+  return m && m.seriesId === props.seriesId && m.ep === props.ep && m.time > 0 ? Math.floor(m.time) : undefined
+}
+const clock = (s: number) => kh(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`)
+function jump(s: number) {
+  seekTo.value = s
+  haptic('tap')
+}
+
 async function post() {
   const body = draft.value.trim()
   if (!body) return
   error.value = ''
   busy.value = true
   try {
-    const c = await $fetch<CommentItem>('/api/comments', { method: 'POST', body: { seriesId: props.seriesId, episode: props.ep, body } })
+    const c = await $fetch<CommentItem>('/api/comments', { method: 'POST', body: { seriesId: props.seriesId, episode: props.ep, body, atSeconds: atNow() } })
     // Below the pinned one, above the rest
     const pins = items.value.filter(x => x.pinned)
     items.value = [...pins, c, ...items.value.filter(x => !x.pinned)]
@@ -157,7 +175,13 @@ const ago = (iso: string) => {
         <span v-else class="avatar initial" aria-hidden="true">{{ c.author.displayName.slice(0, 1) }}</span>
         <div class="body">
           <p v-if="c.pinned" class="pin"><AppIcon name="pin" :size="12" /> ខ្ទាស់ដោយ RuengFlix</p>
-          <p class="meta"><strong>{{ c.author.displayName }}</strong> · {{ ago(c.createdAt) }}</p>
+          <p class="meta">
+            <strong>{{ c.author.displayName }}</strong>
+            <span v-if="(c.author.level ?? 0) > 1" class="lv" :title="`កម្រិតអ្នកគាំទ្រ ${c.author.level}`">Lv.{{ c.author.level }}</span>
+            <span v-for="b in c.author.badges ?? []" :key="b" class="fan-badge" :title="FAN_BADGES[b]?.label" :aria-label="FAN_BADGES[b]?.label">{{ FAN_BADGES[b]?.icon }}</span>
+            · {{ ago(c.createdAt) }}
+            <button v-if="c.atSeconds != null" type="button" class="at" :aria-label="`ទៅនាទី ${clock(c.atSeconds)}`" @click="jump(c.atSeconds)">{{ clock(c.atSeconds) }}</button>
+          </p>
           <p class="text">{{ c.body }}</p>
           <ul v-if="c.replies?.length" class="replies">
             <li v-for="r in c.replies" :key="r.id">
@@ -418,5 +442,28 @@ textarea {
   color: var(--accent-ink);
   font-size: 13px;
   font-weight: 700;
+}
+.lv {
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #8b5cf6, #e5484d);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fan-badge {
+  margin-left: 2px;
+}
+
+.at {
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--bg-elev-2);
+  color: var(--accent-text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 </style>

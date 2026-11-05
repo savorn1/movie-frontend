@@ -39,8 +39,13 @@ export interface Movie {
   subtitled?: Record<number, boolean>
   /** VideoLingo series: the first VIP episode's opening, playable before paying (link + seconds) */
   previews?: Record<number, { url: string; seconds: number }>
+  /** VideoLingo series: each episode's Khmer voice-over track (protected link), when it has one */
+  dubs?: Record<number, string>
   /** Place in the home hero (1 first), set in videolingo-web; null/absent = not a hero pick */
   featuredRank?: number | null
+  /** A promotion makes this VIP series free for everyone until then (ms), and its banner title */
+  freeUntil?: number | null
+  promoTitle?: string | null
 }
 
 /*
@@ -178,6 +183,42 @@ export const byCategoryOf = (list: Movie[], c: Category) => list.filter(m => m.c
 // Sample popularity orders until real view counts exist
 export const rankNow = (list: Movie[]) => [...list].sort((a, b) => ((b.id * 37) % 23) - ((a.id * 37) % 23))
 export const rankWeek = (list: Movie[]) => [...list].sort((a, b) => ((b.id * 13) % 19) - ((a.id * 13) % 19))
+
+/** A home page row, set in the admin portal (RuengFlix › Home rows) and sent with the prices */
+export interface HomeRow {
+  title: string
+  source: 'latest' | 'popular' | 'category' | 'genre'
+  /** The category key or the genre's name; null for latest and popular */
+  value: string | null
+  /** Most series the row shows */
+  max: number
+}
+
+/** The rows Home shows when none are set (the admin portal is seeded with the same four) */
+export const DEFAULT_HOME_ROWS: HomeRow[] = [
+  { title: 'អាប់ដេតថ្មី', source: 'latest', value: null, max: 12 },
+  { title: 'ក្បាច់គុន និងពិភពអមតៈ', source: 'category', value: 'cultivation', max: 30 },
+  { title: 'ស្នេហា និងមនោសញ្ចេតនា', source: 'category', value: 'romance', max: 30 },
+  { title: 'ពិភពស្រមើស្រមៃ និងអព្ភូតហេតុ', source: 'category', value: 'fantasy', max: 30 }
+]
+
+/** Each row's series and its "See all" link; rows with nothing in them are left out */
+export function homeSections(list: Movie[], rows: HomeRow[]) {
+  return rows
+    .map((r) => {
+      const v = r.value ?? ''
+      const [items, more] = r.source === 'popular'
+        ? [rankNow(list), '/hot']
+        : r.source === 'category'
+          ? [byCategoryOf(list, v as Category), `/browse?category=${encodeURIComponent(v)}`]
+          : r.source === 'genre'
+            ? [latestOf(list.filter(m => m.genres.includes(v))), `/search?wd=${encodeURIComponent(v)}`]
+            : [latestOf(list), '/browse']
+      return { title: r.title, more, items: items.slice(0, r.max) }
+    })
+    .filter(s => s.items.length > 0)
+}
+
 
 // Latin-keyboard aliases for categories and common words (many people type Khmer slowly on phones)
 const latinAliases: { words: string[]; match: (m: Movie) => boolean }[] = [

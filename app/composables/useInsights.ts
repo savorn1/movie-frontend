@@ -15,7 +15,7 @@ export function useInsights() {
     return false
   }
 
-  function track(seriesId: number, ep: number, kind: 'start' | 'complete') {
+  function track(seriesId: number, ep: number, kind: 'start' | 'complete' | 'wall') {
     if (alreadySent(`${seriesId}:${ep}:${kind}`)) return
     const body = JSON.stringify({ seriesId, ep, kind })
     const blob = new Blob([body], { type: 'application/json' })

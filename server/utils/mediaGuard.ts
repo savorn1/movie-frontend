@@ -20,8 +20,8 @@ export interface MediaClaim {
   /** Series and episode */
   s: number
   e: number
-  /** full episode, or only the free preview's opening */
-  k: 'full' | 'preview'
+  /** full episode, only the free preview's opening, or the episode's Khmer voice-over track */
+  k: 'full' | 'preview' | 'dub'
   /** Signed-in viewer the link was made for (paid episodes) */
   v?: number
   /** Device cookie it was made for */

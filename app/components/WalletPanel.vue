@@ -11,6 +11,8 @@ interface OrderRow {
   seriesTitle: string | null
   months: number | null
   bonusCoins: number | null
+  promoCoins?: number | null
+  gift?: boolean
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED'
   createdAt: string
 }
@@ -53,7 +55,9 @@ const streakDots = computed(() => {
 const todayDot = computed(() => (wallet.value?.checkIn.doneToday ? streakDots.value : streakDots.value + 1))
 const base = computed(() => (wallet.value ? (todayDot.value === 7 ? wallet.value.checkIn.nextReward / 2 : wallet.value.checkIn.nextReward) : 0))
 const bonus = computed(() => wallet.value?.firstTopUpBonusPercent ?? 0)
-const withBonus = (coins: number) => coins + Math.floor((coins * bonus.value) / 100)
+const promo = computed(() => wallet.value?.coinPromo ?? null)
+/** First-purchase bonus and a running promotion add up */
+const withBonus = (coins: number) => coins + Math.floor((coins * bonus.value) / 100) + Math.floor((coins * (promo.value?.percent ?? 0)) / 100)
 
 const { fly } = useCoinFlight()
 const justCheckedIn = ref(false)
@@ -86,7 +90,7 @@ const statusLabel: Record<OrderRow['status'], string> = {
   CANCELLED: 'បោះបង់'
 }
 const what = (o: OrderRow) =>
-  o.kind === 'COINS' ? `កាក់ ${kh(o.coins ?? 0)}${o.bonusCoins ? ` + ${kh(o.bonusCoins)}` : ''}` : o.kind === 'VIP' ? `VIP ${kh(o.months ?? 0)} ខែ` : `រឿង “${o.seriesTitle ?? ''}”`
+  (o.gift ? '🎁 ' : '') + (o.kind === 'COINS' ? `កាក់ ${kh(o.coins ?? 0)}${o.bonusCoins ? ` + ${kh(o.bonusCoins)}` : ''}` : o.kind === 'VIP' ? `VIP ${kh(o.months ?? 0)} ខែ` : `រឿង “${o.seriesTitle ?? ''}”`)
 </script>
 
 <template>
@@ -138,6 +142,10 @@ const what = (o: OrderRow) =>
     <p v-if="wallet.paymentsOn && bonus" class="first-bonus">
       <AppIcon name="gift" :size="18" /> ការទិញកាក់លើកដំបូង ទទួលបានកាក់បន្ថែម <strong>+{{ kh(bonus) }}%</strong>
     </p>
+    <p v-if="wallet.paymentsOn && promo" class="first-bonus promo">
+      <AppIcon name="sparkle" :size="18" /> {{ promo.title }} · កាក់បន្ថែម <strong>+{{ kh(promo.percent) }}%</strong>
+      <span class="ends">ដល់ <PromoCountdown :until="promo.endsAt" /></span>
+    </p>
     <div v-if="wallet.paymentsOn" class="packs">
       <button
         v-for="p in prices.coinPacks"
@@ -147,7 +155,7 @@ const what = (o: OrderRow) =>
         @click="paying = { product: { kind: 'COINS', coins: p.coins }, label: `ទិញកាក់ ${kh(p.coins)}` }"
       >
         <strong><AppIcon name="coin" :size="18" /> {{ kh(p.coins) }}</strong>
-        <small v-if="bonus" class="extra">+{{ kh(withBonus(p.coins) - p.coins) }} បន្ថែម</small>
+        <small v-if="bonus || promo" class="extra">+{{ kh(withBonus(p.coins) - p.coins) }} បន្ថែម</small>
         <span>${{ p.price.toFixed(2) }}</span>
         <small class="khr">≈ {{ riel(p.price) }}</small>
       </button>
@@ -478,5 +486,17 @@ h2 {
     width: 30px;
     height: 30px;
   }
+}
+.first-bonus.promo {
+  flex-wrap: wrap;
+  border: 1px solid var(--accent);
+  background: rgba(255, 209, 1, 0.1);
+}
+
+.first-bonus .ends {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 13px;
+  white-space: nowrap;
 }
 </style>

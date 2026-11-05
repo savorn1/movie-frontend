@@ -35,7 +35,15 @@ const topUp = computed(() => {
   const packs = prices.value.coinPacks
   return packs.find(p => p.coins >= missing) ?? packs[packs.length - 1] ?? { coins: 100 as const, price: 0.99 }
 })
-const bonusPercent = computed(() => wallet.value?.firstTopUpBonusPercent ?? 0)
+const bonusPercent = computed(() => (wallet.value?.firstTopUpBonusPercent ?? 0) + (wallet.value?.coinPromo?.percent ?? 0))
+/** Free unlocks left today by watching a sponsor ad (0 when ads are off) */
+const adsLeft = computed(() => wallet.value?.adUnlocksLeft ?? 0)
+const watchingAd = ref(false)
+async function onAdDone() {
+  watchingAd.value = false
+  await refreshWallet()
+  await opened(`បានដោះសោវគ្គ ${kh(props.ep)} · អរគុណដែលបានមើលពាណិជ្ជកម្ម`)
+}
 const loginLink = computed(() => ({ path: '/login', query: { next: route.fullPath } }))
 const vipLink = computed(() => ({ path: '/vip', query: { next: route.fullPath } }))
 
@@ -141,7 +149,7 @@ function simulateUnlock() {
           <span class="o-sub">អ្នកមាន {{ kh(wallet?.coins ?? 0) }} កាក់ · នៅសល់ {{ kh((wallet?.coins ?? 0) - episodeCoins) }} ក្រោយដោះសោ</span>
         </button>
         <button v-else type="button" class="option primary" :disabled="busy || !wallet?.paymentsOn" @click="topUpAndUnlock">
-          <span v-if="bonusPercent" class="tag bonus"><AppIcon name="gift" :size="13" /> +{{ kh(bonusPercent) }}% លើកដំបូង</span>
+          <span v-if="bonusPercent" class="tag bonus"><AppIcon name="gift" :size="13" /> +{{ kh(bonusPercent) }}% {{ wallet?.coinPromo ? "ប្រូម៉ូសិន" : "លើកដំបូង" }}</span>
           <span class="o-head">
             <strong>ទិញកាក់ {{ kh(topUp.coins) }} ហើយដោះសោ</strong>
             <span class="price">${{ topUp.price.toFixed(2) }}</span>
@@ -149,6 +157,13 @@ function simulateUnlock() {
           <span class="o-sub">
             ≈ {{ riel(topUp.price) }} · វគ្គនេះ {{ kh(episodeCoins) }} កាក់ · អ្នកមាន {{ kh(wallet?.coins ?? 0) }}<template v-if="bonusPercent"> · ទទួលបាន {{ kh(topUp.coins + Math.floor(topUp.coins * bonusPercent / 100)) }} កាក់</template>
           </span>
+        </button>
+        <button v-if="adsLeft > 0" type="button" class="option ad-option" :disabled="busy" @click="watchingAd = true">
+          <span class="o-head">
+            <strong><AppIcon name="play" :size="16" /> មើលពាណិជ្ជកម្មខ្លី</strong>
+            <span class="price free">ឥតគិតថ្លៃ</span>
+          </span>
+          <span class="o-sub">ដោះសោវគ្គនេះដោយមិនចំណាយ · នៅសល់ {{ kh(adsLeft) }} ដងថ្ងៃនេះ</span>
         </button>
         <button type="button" class="option" @click="buy({ kind: 'SERIES', seriesId: movie.id }, `ដោះសោ “${movie.title}”`)">
           <span class="o-head">
@@ -186,6 +201,8 @@ function simulateUnlock() {
         ត្រឡប់ទៅវគ្គ {{ kh(movie.freeEpisodes) }}
       </NuxtLink>
     </div>
+
+    <AdBreak v-if="watchingAd" :series-id="movie.id" :ep="ep" @done="onAdDone" @close="watchingAd = false; refreshWallet()" />
 
     <KhqrPay
       v-if="paying"
@@ -341,6 +358,15 @@ h2 {
   margin-left: 2px;
   font-size: 13px;
   font-weight: 500;
+}
+
+.price.free {
+  color: #7ff0b0;
+  font-size: 16px;
+}
+
+.ad-option {
+  border-color: rgba(127, 240, 176, 0.55);
 }
 
 .o-sub {

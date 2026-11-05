@@ -87,6 +87,14 @@ export default defineNuxtConfig({
         { rel: 'manifest', href: '/manifest.webmanifest' },
         { rel: 'apple-touch-icon', href: '/icons/apple-touch-icon.png' },
         { rel: 'icon', type: 'image/png', sizes: '192x192', href: '/icons/icon-192.png' }
+      ],
+      script: [
+        {
+          // Telegram Mini App launch data arrives in the address hash, which the router rewrites (and
+          // decodes) while starting: keep the original before it does (plugins/telegram-webapp.client.ts)
+          key: 'tg-launch',
+          innerHTML: "try{if(location.hash.indexOf('tgWebAppData')>-1)sessionStorage.setItem('rf-tg-hash',location.hash)}catch(e){}"
+        }
       ]
     }
   }

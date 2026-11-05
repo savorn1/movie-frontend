@@ -19,6 +19,10 @@ export interface PlayerPrefs {
   captionBg?: 'none' | 'soft' | 'solid'
   /** Lower (default) or higher, clear of burned-in text */
   captionPos?: 'low' | 'high'
+  /** Original sound, or the Khmer voice-over when an episode has one */
+  voice?: 'original' | 'km'
+  /** Comments floating across the picture at the moment they were written (on unless turned off) */
+  danmaku?: boolean
   /** Genres picked on the first visit, for "For you" before there's any watching to go on */
   genres?: string[]
   /** The first-visit genre picker was answered or skipped */

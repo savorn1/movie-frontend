@@ -1,5 +1,8 @@
 <script setup lang="ts">
-const { byCategory, featured, hotNow, latest } = useCatalog()
+import { homeSections } from '#shared/data/movies'
+
+const { featured, hotNow, movies } = useCatalog()
+const { homeRows } = useSite()
 
 usePageMeta({})
 
@@ -14,13 +17,9 @@ const personalRows = useCookie<number>('rf-rows', { default: () => 0, maxAge: 60
 const personalNow = computed(() => (newForYou.value.length ? 1 : 0) + (continueWatching.value.length ? 1 : 0))
 onMounted(() => watch(personalNow, (n) => (personalRows.value = n), { immediate: true }))
 
-// Swipeable rows keep Home short; the full grids live on Browse, pre-filtered by "See all"
-const sections = computed(() => [
-  { title: 'អាប់ដេតថ្មី', more: '/browse', items: latest.value.slice(0, 12) },
-  { title: 'ក្បាច់គុន និងពិភពអមតៈ', more: '/browse?category=cultivation', items: byCategory('cultivation') },
-  { title: 'ស្នេហា និងមនោសញ្ចេតនា', more: '/browse?category=romance', items: byCategory('romance') },
-  { title: 'ពិភពស្រមើស្រមៃ និងអព្ភូតហេតុ', more: '/browse?category=fantasy', items: byCategory('fantasy') }
-])
+// Swipeable rows keep Home short; the full grids live on Browse, pre-filtered by "See all". Which rows, in
+// what order, is set in the admin portal (RuengFlix › Home rows)
+const sections = computed(() => homeSections(movies.value, homeRows.value))
 </script>
 
 <template>
@@ -29,6 +28,9 @@ const sections = computed(() => [
     <HeroSlider v-if="featured.length" :items="featured" />
 
     <div class="content">
+      <ClientOnly>
+        <PromoBanner />
+      </ClientOnly>
       <!-- Posters first: the viewer's own rows, then today's top 10, then everything else -->
       <ClientOnly>
         <MovieRow
@@ -82,7 +84,7 @@ const sections = computed(() => [
         />
       </ClientOnly>
 
-      <MovieRow v-for="s in sections" :key="s.title" :title="s.title" :more="s.more" :items="s.items" small :col="[168, 124]" />
+      <MovieRow v-for="(s, i) in sections" :key="`${i}-${s.title}`" :title="s.title" :more="s.more" :items="s.items" small :col="[168, 124]" />
     </div>
   </div>
 </template>

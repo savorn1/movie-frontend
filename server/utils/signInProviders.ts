@@ -48,6 +48,46 @@ export function verifyTelegramLogin(
   }
 }
 
+/**
+ * Telegram Mini App sign-in: the `initData` string Telegram hands the page inside the app. Checked as
+ * Telegram documents for Web Apps: HMAC-SHA256 of the sorted "key=value" lines, keyed with
+ * HMAC-SHA256("WebAppData", bot token). Too old (a day) or signed for another bot: null.
+ */
+export function verifyTelegramWebApp(
+  initData: string,
+  botToken: string,
+  nowSeconds = Math.floor(Date.now() / 1000)
+): (TelegramUser & { startParam: string | null }) | null {
+  if (!botToken || !initData || initData.length > 4096) return null
+  const params = new URLSearchParams(initData)
+  const hash = params.get('hash')
+  if (!hash || !/^[0-9a-f]{64}$/.test(hash)) return null
+  params.delete('hash')
+  const lines = [...params.entries()].map(([k, v]) => `${k}=${v}`).sort()
+  const secret = createHmac('sha256', 'WebAppData').update(botToken).digest()
+  const expected = createHmac('sha256', secret).update(lines.join('\n')).digest()
+  if (!timingSafeEqual(expected, Buffer.from(hash, 'hex'))) return null
+
+  const authDate = Number(params.get('auth_date'))
+  if (!Number.isFinite(authDate) || nowSeconds - authDate > TELEGRAM_MAX_AGE_SECONDS || authDate - nowSeconds > 60) return null
+  let user: Record<string, unknown>
+  try {
+    user = JSON.parse(params.get('user') ?? '')
+  } catch {
+    return null
+  }
+  const id = String(user?.id ?? '')
+  if (!/^\d{1,19}$/.test(id)) return null
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ')
+  return {
+    id,
+    name: name || (typeof user.username === 'string' ? user.username : ''),
+    username: typeof user.username === 'string' ? user.username : null,
+    photoUrl: typeof user.photo_url === 'string' && user.photo_url.startsWith('https://') ? user.photo_url : null,
+    startParam: params.get('start_param')
+  }
+}
+
 // ---------- Google (OpenID Connect, authorization code flow with PKCE) ----------
 
 export const GOOGLE_AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth'

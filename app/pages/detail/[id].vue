@@ -22,6 +22,42 @@ watch(() => viewer.value?.id, loadEpisodes)
 const { share } = useShare()
 const ambient = useAmbientColor(() => movie.value?.poster)
 
+/*
+ * Trailer: a silent loop of episode 1 (12 s from a little way in) behind the artwork, to hook the
+ * visitor. Not with Data saver (mobile data, slow networks), Reduce motion, or while scrolled away.
+ */
+const { episodesOf } = useSeriesEpisodes()
+const { active: saveData } = useDataSaver()
+const trailerSrc = computed(() => {
+  if (!import.meta.client || saveData.value || reducedMotion()) return ''
+  return episodesOf(movie.value!.id)?.find(e => e.number === 1)?.videoUrl ?? ''
+})
+const trailer = ref<HTMLVideoElement>()
+const trailerOn = ref(false)
+let trailerFrom = 0
+function onTrailerMeta() {
+  const v = trailer.value
+  if (!v) return
+  trailerFrom = Math.min(20, Math.max(0, v.duration * 0.15 || 0))
+  v.currentTime = trailerFrom
+  v.play().catch(() => {})
+}
+function onTrailerTime() {
+  const v = trailer.value
+  if (v && v.currentTime > trailerFrom + 12) v.currentTime = trailerFrom
+}
+let trailerObserver: IntersectionObserver | undefined
+watch(trailer, (v) => {
+  trailerObserver?.disconnect()
+  if (!v || !('IntersectionObserver' in window)) return
+  trailerObserver = new IntersectionObserver(([e]) => (e?.isIntersecting ? v.play().catch(() => {}) : v.pause()))
+  trailerObserver.observe(v)
+})
+onBeforeUnmount(() => trailerObserver?.disconnect())
+
+// A promotion makes this VIP series free for everyone for a while
+const freeNow = computed(() => !!movie.value?.freeUntil && movie.value.freeUntil > Date.now())
+
 const related = computed(() => byCategory(movie.value!.category).filter(m => m.id !== movie.value!.id))
 const resumeEp = computed(() => lastEpisode(movie.value!.id))
 const expanded = ref(false)
@@ -106,7 +142,25 @@ useHead({
   <div v-if="movie" class="page" :style="{ '--ambient': ambient }">
     <!-- Cinematic backdrop tinted with the poster's own color -->
     <div class="backdrop" aria-hidden="true">
-      <div class="backdrop-img" :style="{ backgroundImage: `url(${movie.banner})` }" />
+      <div class="backdrop-img" :class="{ dim: trailerOn }" :style="{ backgroundImage: `url(${movie.banner})` }" />
+      <ClientOnly>
+        <video
+          v-if="trailerSrc"
+          ref="trailer"
+          class="trailer"
+          :class="{ on: trailerOn }"
+          :src="trailerSrc"
+          muted
+          playsinline
+          preload="metadata"
+          disablepictureinpicture
+          tabindex="-1"
+          @loadedmetadata="onTrailerMeta"
+          @timeupdate="onTrailerTime"
+          @playing="trailerOn = true"
+          @error="trailerOn = false"
+        />
+      </ClientOnly>
     </div>
 
     <section class="detail">
@@ -124,6 +178,13 @@ useHead({
       >
       <div class="info cascade">
         <h1 class="display">{{ movie.title }}</h1>
+        <ClientOnly>
+          <p v-if="freeNow" class="free-ribbon">
+            <AppIcon name="sparkle" :size="16" />
+            <span>{{ movie.promoTitle || 'មើលឥតគិតថ្លៃគ្រប់វគ្គ' }}</span>
+            <span class="ends">នៅសល់ <PromoCountdown :until="movie.freeUntil!" /></span>
+          </p>
+        </ClientOnly>
         <p class="meta">
           <span v-if="movie.vip" class="vip-badge">VIP</span>
           {{ kh(movie.year) }} · {{ movie.region }} · {{ kh(movie.episodes) }} វគ្គ
@@ -153,7 +214,7 @@ useHead({
           <NextEpisode v-if="movie.nextEpisodeAt" :at="movie.nextEpisodeAt" :episode="movie.episodes + 1" />
         </ClientOnly>
 
-        <p v-if="movie.vip" class="vip-note">
+        <p v-if="movie.vip && !freeNow" class="vip-note">
           វគ្គ ១–{{ kh(movie.freeEpisodes) }} មើលដោយឥតគិតថ្លៃ។ វគ្គបន្ទាប់ត្រូវការ
           <NuxtLink to="/vip">សមាជិក VIP</NuxtLink>។
         </p>
@@ -211,6 +272,30 @@ useHead({
   filter: blur(28px) saturate(1.2);
   opacity: 0.35;
   transform: scale(1.15);
+}
+
+.trailer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 900ms var(--ease-out);
+  pointer-events: none;
+}
+
+.trailer.on {
+  opacity: 0.55;
+}
+
+.backdrop-img.dim {
+  opacity: 0;
+  transition: opacity 900ms var(--ease-out);
+}
+
+:root[data-theme='light'] .trailer.on {
+  opacity: 0.3;
 }
 
 :root[data-theme='light'] .backdrop-img {
@@ -319,6 +404,27 @@ useHead({
 .dock-leave-to {
   opacity: 0;
   transform: translateY(16px);
+}
+
+.free-ribbon {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: linear-gradient(110deg, #c2185b, #e5484d 60%, #ff7a45);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.free-ribbon .ends {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 13px;
 }
 
 .info {

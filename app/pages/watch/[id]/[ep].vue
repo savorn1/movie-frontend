@@ -29,7 +29,8 @@ const playable = computed(() => {
   const sources = Object.fromEntries(episodes.filter(e => e.videoUrl).map(e => [e.number, e.videoUrl!]))
   const subtitled = Object.fromEntries(episodes.map(e => [e.number, e.hasSubtitles]))
   const previews = Object.fromEntries(episodes.filter(e => e.preview).map(e => [e.number, e.preview!]))
-  return { ...m, sources, subtitled, previews }
+  const dubs = Object.fromEntries(episodes.filter(e => e.dubUrl).map(e => [e.number, e.dubUrl!]))
+  return { ...m, sources, subtitled, previews, dubs }
 })
 const playerReady = computed(() => !movie.value!.remote || episodesStatus.value === 'success')
 

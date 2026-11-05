@@ -8,6 +8,11 @@ export interface Wallet {
   paymentsOn: boolean
   /** Extra coins (percent) on this viewer's first coin pack; 0 once they've paid for anything */
   firstTopUpBonusPercent: number
+  /** A running "extra coins" promotion: every pack until it ends */
+  coinPromo?: { percent: number; title: string; endsAt: string } | null
+  /** Episodes still unlockable today by watching an ad (0 when ads are off) */
+  adUnlocksLeft?: number
+  adUnlocksPerDay?: number
 }
 
 /** The signed-in viewer's coins and VIP time, shared by the Me page and the unlock wall */

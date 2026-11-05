@@ -12,6 +12,9 @@ interface PaidOrder {
   months: number | null
   seriesId: number | null
   seriesTitle: string | null
+  promoCoins?: number | null
+  /** Bought for a friend: the notice points at the link to send, not at coins they got */
+  gift?: boolean
 }
 
 const { viewer } = useViewer()
@@ -53,8 +56,10 @@ onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible
 
 const first = computed(() => news.value[0] ?? null)
 const what = (o: PaidOrder) =>
-  o.kind === 'COINS'
-    ? `+${kh((o.coins ?? 0) + (o.bonusCoins ?? 0))} កាក់`
+  o.gift
+    ? '🎁 កាដូរួចរាល់ · ផ្ញើតំណទៅមិត្ត'
+    : o.kind === 'COINS'
+    ? `+${kh((o.coins ?? 0) + (o.bonusCoins ?? 0) + (o.promoCoins ?? 0))} កាក់`
     : o.kind === 'VIP'
       ? `VIP ${kh(o.months ?? 0)} ខែ`
       : `“${o.seriesTitle ?? ''}” បានដោះសោ`
@@ -67,7 +72,7 @@ async function dismiss(o: PaidOrder) {
 }
 
 async function goBack(o: PaidOrder) {
-  const to = orderReturn(o.id) ?? (o.seriesId ? `/detail/${o.seriesId}` : '/library#wallet')
+  const to = o.gift ? '/library#gifts' : (orderReturn(o.id) ?? (o.seriesId ? `/detail/${o.seriesId}` : '/library#wallet'))
   await dismiss(o)
   await navigateTo(to)
 }

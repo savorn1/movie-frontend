@@ -9,7 +9,11 @@
  * puts the code in their photos (share sheet on phones, a download elsewhere) so the banking app can
  * read it from the gallery. Once paid, a short success screen shows what they got before going back.
  */
-export type Product = { kind: 'COINS'; coins: number } | { kind: 'SERIES'; seriesId: number } | { kind: 'VIP'; months: number }
+/** `gift`: bought for someone else (coins or VIP); paying it makes a link to send instead */
+export type Product =
+  | { kind: 'COINS'; coins: number; gift?: boolean; giftMessage?: string }
+  | { kind: 'SERIES'; seriesId: number }
+  | { kind: 'VIP'; months: number; gift?: boolean; giftMessage?: string }
 
 interface Order {
   id: number
@@ -18,6 +22,10 @@ interface Order {
   billNumber: string
   coins: number | null
   bonusCoins: number | null
+  /** Extra coins from a running promotion */
+  promoCoins?: number | null
+  gift?: boolean
+  giftCode?: string | null
   months: number | null
   qrSvg: string | null
   qrPng: string | null
@@ -44,7 +52,19 @@ const totalSeconds = computed(() => (order.value ? Math.max(1, (Date.parse(order
 const countdown = computed(() => `${Math.floor(secondsLeft.value / 60)}:${String(secondsLeft.value % 60).padStart(2, '0')}`)
 const urgent = computed(() => secondsLeft.value > 0 && secondsLeft.value <= 60)
 const paid = computed(() => order.value?.status === 'PAID')
-const gotCoins = computed(() => (order.value?.coins ?? 0) + (order.value?.bonusCoins ?? 0))
+const gotCoins = computed(() => (order.value?.coins ?? 0) + (order.value?.bonusCoins ?? 0) + (order.value?.promoCoins ?? 0))
+const isGift = computed(() => 'gift' in props.product && !!props.product.gift)
+const giftLink = computed(() => (order.value?.giftCode ? `${window.location.origin}/gift/${order.value.giftCode}` : ''))
+const { share } = useShare()
+const { success: toastOk } = useToast()
+async function copyGift() {
+  try {
+    await navigator.clipboard.writeText(giftLink.value)
+    toastOk('បានចម្លងតំណ')
+  } catch {
+    window.prompt('ចម្លងតំណនេះ', giftLink.value)
+  }
+}
 
 async function start() {
   error.value = ''
@@ -170,7 +190,7 @@ const badge = ref<HTMLElement>()
 
 function finish() {
   // Bought coins fly from the success badge into the header as the screen closes
-  if (props.product.kind === 'COINS') fly(badge.value, gotCoins.value)
+  if (props.product.kind === 'COINS' && !isGift.value) fly(badge.value, gotCoins.value)
   emit('paid')
 }
 
@@ -204,15 +224,35 @@ onBeforeUnmount(() => {
         <div class="burst" aria-hidden="true">
           <span v-for="i in 12" :key="i" :style="{ '--i': i }" />
         </div>
-        <span ref="badge" class="badge" :class="product.kind.toLowerCase()">
-          <AppIcon :name="product.kind === 'COINS' ? 'coin' : product.kind === 'VIP' ? 'crown' : 'check'" :size="34" />
+        <span ref="badge" class="badge" :class="isGift ? 'gift' : product.kind.toLowerCase()">
+          <AppIcon :name="isGift ? 'gift' : product.kind === 'COINS' ? 'coin' : product.kind === 'VIP' ? 'crown' : 'check'" :size="34" />
         </span>
-        <h2 id="pay-title">បង់ប្រាក់រួចរាល់!</h2>
+        <h2 id="pay-title">{{ isGift ? 'កាដូរួចរាល់!' : 'បង់ប្រាក់រួចរាល់!' }}</h2>
+        <template v-if="isGift">
+          <p class="muted">ផ្ញើតំណនេះទៅមិត្តរបស់អ្នក។ អ្នកដែលបើកមុនគេនឹងទទួលបានកាដូ។</p>
+          <div v-if="giftLink" class="gift-link">
+            <input :value="giftLink" readonly aria-label="តំណកាដូ" @focus="($event.target as HTMLInputElement).select()">
+            <button type="button" class="btn" @click="copyGift">ចម្លង</button>
+          </div>
+          <p v-else class="muted">កំពុងរៀបចំតំណ…</p>
+          <div v-if="giftLink" class="gift-share">
+            <a class="btn btn-primary" :href="`https://t.me/share/url?url=${encodeURIComponent(giftLink)}&text=${encodeURIComponent('🎁 កាដូពី RuengFlix សម្រាប់អ្នក!')}`" target="_blank" rel="noopener">
+              <AppIcon name="send" :size="16" /> ផ្ញើតាម Telegram
+            </a>
+            <button type="button" class="btn" @click="share('🎁 កាដូពី RuengFlix', giftLink)">
+              <AppIcon name="share" :size="16" /> ចែករំលែក
+            </button>
+          </div>
+          <button type="button" class="btn wide" @click="finish">រួចរាល់</button>
+        </template>
+        <template v-else>
         <p v-if="product.kind === 'COINS'" class="gain" aria-live="polite">+{{ kh(shown) }} <small>កាក់</small></p>
         <p v-if="order.bonusCoins" class="bonus"><AppIcon name="gift" :size="16" /> រួមទាំងកាក់បន្ថែម {{ kh(order.bonusCoins) }} សម្រាប់ការទិញលើកដំបូង</p>
         <p v-else-if="product.kind === 'VIP'" class="muted">អ្នកជាសមាជិក VIP {{ kh(order.months ?? 0) }} ខែ · គ្រប់វគ្គបើកហើយ</p>
         <p v-else-if="product.kind === 'SERIES'" class="muted">{{ label }} · គ្រប់វគ្គបើកហើយ</p>
+        <p v-if="order.promoCoins" class="bonus"><AppIcon name="sparkle" :size="16" /> រួមទាំងកាក់ប្រូម៉ូសិន {{ kh(order.promoCoins) }}</p>
         <button type="button" class="btn btn-primary wide" autofocus @click="finish">{{ doneLabel ?? 'បន្ត' }}</button>
+        </template>
       </template>
 
       <template v-else>
@@ -502,5 +542,35 @@ h2 {
   .fill {
     transition: none;
   }
+}
+.gift-link {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.gift-link input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev-2);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 14px;
+}
+
+.gift-share {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.badge.gift {
+  background: linear-gradient(135deg, #ff8ab3, #e5484d);
+  color: #fff;
 }
 </style>
